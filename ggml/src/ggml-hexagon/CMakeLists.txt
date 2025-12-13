@@ -35,6 +35,9 @@ ggml_add_backend_library(${TARGET_NAME}
 target_link_libraries(${TARGET_NAME} PRIVATE htp_iface)
 target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/htp ${CMAKE_CURRENT_BINARY_DIR})
 
+# Host-side unit tests for DSP ops
+add_subdirectory(htp/tests)
+
 # Build HTP bits
 set(HTP_CMAKE_ARGS
     -DCMAKE_TOOLCHAIN_FILE=${CMAKE_CURRENT_SOURCE_DIR}/htp/cmake-toolchain.cmake

@@ -11,6 +11,14 @@ interface htp_iface : remote_handle64 {
     AEEResult stop();
     AEEResult enable_etm();
     AEEResult disable_etm();
+
+    // Generic unary test entry for DSP-side unit tests
+    // op_id defines the unary operator (e.g., 0 = inverse, future: 1 = exp, ...)
+    // Use QAIC sequences for buffers to ensure correct stub generation.
+    AEEResult test_unary(in uint32 op_id,
+                         in uint32 num_elems,
+                         in sequence<uint8> src,
+                         rout sequence<uint8> dst);
 };
 
 #endif /* HTP_IDL */
