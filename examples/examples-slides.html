@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>llama.cpp Examples - Code Architecture</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f0f23; color: #fff; }
+        .slide { min-height: 100vh; padding: 60px 80px; display: flex; flex-direction: column; border-bottom: 1px solid #333; }
+        .slide-number { position: fixed; top: 20px; right: 40px; font-size: 14px; color: #666; }
+        h1 { font-size: 2.8em; margin-bottom: 40px; background: linear-gradient(135deg, #f64f59, #c471ed, #12a4d9); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        h2 { font-size: 2em; margin-bottom: 30px; color: #12a4d9; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+        .card { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 12px; padding: 24px; border: 1px solid #333; transition: transform 0.3s, box-shadow 0.3s; }
+        .card:hover { transform: translateY(-4px); box-shadow: 0 8px 30px rgba(18, 164, 217, 0.2); }
+        .card h3 { color: #f64f59; margin-bottom: 12px; font-size: 1.3em; }
+        .card p { color: #aaa; line-height: 1.6; font-size: 0.95em; }
+        .tag { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.8em; margin: 4px; }
+        .tag-lang { background: #12a4d9; color: #000; }
+        .tag-platform { background: #c471ed; color: #fff; }
+        .tag-feature { background: #f64f59; color: #fff; }
+        .tree { font-family: 'Consolas', monospace; font-size: 0.9em; line-height: 1.8; }
+        .tree .dir { color: #12a4d9; }
+        .tree .file { color: #c471ed; }
+        .tree .comment { color: #666; }
+        ul { list-style: none; padding-left: 20px; }
+        ul li { padding: 8px 0; position: relative; }
+        ul li::before { content: '▸'; position: absolute; left: -20px; color: #f64f59; }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+        .highlight-box { background: linear-gradient(135deg, #f64f59 0%, #c471ed 100%); padding: 20px; border-radius: 12px; text-align: center; margin: 10px 0; }
+        .stat { font-size: 3em; font-weight: bold; color: #12a4d9; }
+        code { background: #1a1a2e; padding: 2px 8px; border-radius: 4px; color: #c471ed; }
+        .flow { display: flex; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap; }
+        .flow-item { background: #1a1a2e; padding: 20px 30px; border-radius: 8px; border: 2px solid #12a4d9; text-align: center; }
+        .flow-arrow { color: #f64f59; font-size: 2em; }
+    </style>
+</head>
+<body>
+
+<div class="slide" id="s1">
+    <span class="slide-number">1 / 12</span>
+    <h1>llama.cpp Examples</h1>
+    <p style="font-size: 1.4em; color: #aaa; margin-bottom: 40px;">A comprehensive showcase of example programs demonstrating various capabilities of the llama.cpp inference engine</p>
+    <div class="grid">
+        <div class="highlight-box">
+            <div class="stat">40+</div>
+            <div>Example Projects</div>
+        </div>
+        <div class="highlight-box">
+            <div class="stat">C++</div>
+            <div>Primary Language</div>
+        </div>
+        <div class="highlight-box">
+            <div class="stat">5+</div>
+            <div>Platform Targets</div>
+        </div>
+    </div>
+</div>
+
+<div class="slide" id="s2">
+    <span class="slide-number">2 / 12</span>
+    <h2>Directory Structure Overview</h2>
+    <div class="tree">
+<span class="dir">examples/</span>
+├── <span class="dir">batched/</span>          <span class="comment">- Batch inference examples</span>
+├── <span class="dir">debug/</span>             <span class="comment">- Debugging utilities</span>
+├── <span class="dir">embedding/</span>         <span class="comment">- Text embedding demos</span>
+├── <span class="dir">parallel/</span>          <span class="comment">- Parallel processing</span>
+├── <span class="dir">retrieval/</span>          <span class="comment">- RAG retrieval</span>
+├── <span class="dir">speculative/</span>        <span class="comment">- Speculative decoding</span>
+├── <span class="dir">training/</span>          <span class="comment">- Model fine-tuning</span>
+├── <span class="dir">simple/</span>            <span class="comment">- Basic usage examples</span>
+├── <span class="dir">llama.swiftui/</span>      <span class="comment">- iOS/macOS app</span>
+├── <span class="dir">llama.android/</span>      <span class="comment">- Android app</span>
+└── <span class="file">CMakeLists.txt</span>       <span class="comment">- Build configuration</span>
+    </div>
+</div>
+
+<div class="slide" id="s3">
+    <span class="slide-number">3 / 12</span>
+    <h2>Core Inference Examples</h2>
+    <div class="grid">
+        <div class="card">
+            <h3>simple/</h3>
+            <p>Minimal example demonstrating basic llama.cpp usage: model loading, tokenization, and text generation</p>
+            <div>
+                <span class="tag tag-lang">C++</span>
+                <span class="tag tag-feature">Basic</span>
+            </div>
+        </div>
+        <div class="card">
+            <h3>batched/</h3>
+            <p>Efficient batch processing of multiple prompts simultaneously for higher throughput</p>
+            <div>
+                <span class="tag tag-lang">C++</span>
+                <span class="tag tag-feature">Batch</span>
+            </div>
+        </div>
+        <div class="card">
+            <h3>speculative/</h3>
+            <p>Speculative decoding for faster inference using smaller draft models</p>
+            <div>
+                <span class="tag tag-lang">C++</span>
+                <span class="tag tag-feature">Performance</span>
+            </div>
+        </div>
+        <div class="card">
+            <h3>parallel/</h3>
+            <p>Multi-threaded parallel inference for concurrent request handling</p>
+            <div>
+                <span class="tag tag-lang">C++</span>
+                <span class="tag tag-feature">Concurrency</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="slide" id="s4">
+    <span class="slide-number">4 / 12</span>
+    <h2>Embedding & Retrieval</h2>
+    <div class="grid">
+        <div class="card">
+            <h3>embedding/</h3>
+            <p>Generate text embeddings for semantic search and similarity matching. Supports various embedding models.</p>
+            <ul>
+                <li>Sentence transformer style embeddings</li>
+                <li>Cosine similarity computation</li>
+                <li>Batch embedding generation</li>
+            </ul>
+        </div>
+        <div class="card">
+            <h3>retrieval/</h3>
+            <p>Retrieval-Augmented Generation (RAG) implementation with llama.cpp. Combines embedding + retrieval + generation.</p>
+            <ul>
+                <li>Vector database integration</li>
+                <li>Context injection</li>
+                <li>Hybrid search support</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="slide" id="s5">
+    <span class="slide-number">5 / 12</span>
+    <h2>Advanced Features</h2>
+    <div class="grid">
+        <div class="card">
+            <h3>speculative-simple/</h3>
+            <p>Simplified speculative decoding example showing the draft-verify paradigm</p>
+        </div>
+        <div class="card">
+            <h3>lookahead/</h3>
+            <p>Lookahead decoding implementation for accelerated generation</p>
+        </div>
+        <div class="card">
+            <h3>save-load-state/</h3>
+            <p>Checkpoint and resume inference sessions, save partial results</p>
+        </div>
+        <div class="card">
+            <h3>eval-callback/</h3>
+            <p>Custom evaluation callbacks for progress monitoring and control</p>
+        </div>
+    </div>
+</div>
+
+<div class="slide" id="s6">
+    <span class="slide-number">6 / 12</span>
+    <h2>Grammar & JSON Generation</h2>
+    <div class="two-col">
+        <div>
+            <div class="card">
+                <h3>json_schema_to_grammar.py</h3>
+                <p>Convert JSON Schema to GGML grammar format for structured output</p>
+                <p style="margin-top: 10px;"><code>JSON Schema → Grammar</code></p>
+            </div>
+            <div class="card" style="margin-top: 20px;">
+                <h3>pydantic_models_to_grammar.py</h3>
+                <p>Direct conversion from Python Pydantic models to grammars</p>
+            </div>
+        </div>
+        <div>
+            <div class="card">
+                <h3>regex_to_grammar.py</h3>
+                <p>Transform regex patterns into llama.cpp grammar format for constrained generation</p>
+            </div>
+            <div class="card" style="margin-top: 20px;">
+                <h3>pydantic_models_to_grammar_examples.py</h3>
+                <p>Usage examples demonstrating Pydantic-to-grammar conversion</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="slide" id="s7">
+    <span class="slide-number">7 / 12</span>
+    <h2>Model Conversion Tools</h2>
+    <div class="grid">
+        <div class="card">
+            <h3>convert_legacy_llama.py</h3>
+            <p>Convert legacy LLaMA model formats to GGUF format</p>
+        </div>
+        <div class="card">
+            <h3>model-conversion/</h3>
+            <p>Comprehensive model conversion utilities for various formats</p>
+        </div>
+        <div class="card">
+            <h3>convert-llama2c-to-ggml/</h3>
+            <p>LLaMA2C to GGML format converter</p>
+        </div>
+        <div class="card">
+            <h3>gguf/</h3>
+            <p>GGUF format utilities and tools</p>
+        </div>
+    </div>
+</div>
+
+<div class="slide" id="s8">
+    <span class="slide-number">8 / 12</span>
+    <h2>Platform-Specific Examples</h2>
+    <div class="grid">
+        <div class="card">
+            <h3>llama.swiftui/</h3>
+            <p>Native iOS/macOS application using SwiftUI</p>
+            <div>
+                <span class="tag tag-platform">Apple</span>
+                <span class="tag tag-lang">Swift</span>
+            </div>
+        </div>
+        <div class="card">
+            <h3>batched.swift/</h3>
+            <p>Swift version of batch inference</p>
+            <div>
+                <span class="tag tag-platform">Apple</span>
+            </div>
+        </div>
+        <div class="card">
+            <h3>llama.android/</h3>
+            <p>Native Android application</p>
+            <div>
+                <span class="tag tag-platform">Android</span>
+                <span class="tag tag-lang">Kotlin</span>
+            </div>
+        </div>
+        <div class="card">
+            <h3>sycl/</h3>
+            <p>SYCL implementation for GPU acceleration</p>
+            <div>
+                <span class="tag tag-platform">GPU</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="slide" id="s9">
+    <span class="slide-number">9 / 12</span>
+    <h2>Server & Deployment</h2>
+    <div class="grid">
+        <div class="card">
+            <h3>server_embd.py</h3>
+            <p>Embedding server implementation in Python</p>
+        </div>
+        <div class="card">
+            <h3>server-llama2-13B.sh</h3>
+            <p>Quick start script for running LLaMA2-13B server</p>
+        </div>
+        <div class="card">
+            <h3>simple-chat/</h3>
+            <p>Simple chat interface example</p>
+        </div>
+        <div class="card">
+            <h3>idle/</h3>
+            <p>Idle connection handling example</p>
+        </div>
+    </div>
+</div>
+
+<div class="slide" id="s10">
+    <span class="slide-number">10 / 12</span>
+    <h2>Utilities & Helpers</h2>
+    <div class="grid">
+        <div class="card">
+            <h3>gguf-hash/</h3>
+            <p>GGUF file hashing and verification tools</p>
+        </div>
+        <div class="card">
+            <h3>debug/</h3>
+            <p>Debugging utilities and tools</p>
+        </div>
+        <div class="card">
+            <h3>gen-docs/</h3>
+            <p>Automatic documentation generation</p>
+        </div>
+        <div class="card">
+            <h3>deprecation-warning/</h3>
+            <p>Example of handling deprecation warnings</p>
+        </div>
+    </div>
+</div>
+
+<div class="slide" id="s11">
+    <span class="slide-number">11 / 12</span>
+    <h2>Use Case Flow</h2>
+    <div style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
+        <div class="flow">
+            <div class="flow-item">
+                <strong>Model Loading</strong><br>
+                <small>GGUF format</small>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-item">
+                <strong>Tokenization</strong><br>
+                <small>Input processing</small>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-item">
+                <strong>Inference</strong><br>
+                <small>LLM forward pass</small>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-item">
+                <strong>Generation</strong><br>
+                <small>Token sampling</small>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 40px;">
+            <h3 style="color: #f64f59; margin-bottom: 20px;">Additional Capabilities</h3>
+            <div style="display: flex; gap: 20px; justify-content: center; flex-wrap: wrap;">
+                <span class="tag tag-feature">Batch Processing</span>
+                <span class="tag tag-feature">Speculative Decoding</span>
+                <span class="tag tag-feature">Grammar Constraints</span>
+                <span class="tag tag-feature">Embedding Generation</span>
+                <span class="tag tag-feature">RAG Integration</span>
+                <span class="tag tag-feature">State Persistence</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="slide" id="s12">
+    <span class="slide-number">12 / 12</span>
+    <h2>Summary</h2>
+    <div class="grid">
+        <div class="card">
+            <h3>Getting Started</h3>
+            <p>Start with <code>simple/</code> for basic usage, then explore <code>batched/</code> for performance</p>
+        </div>
+        <div class="card">
+            <h3>Structured Output</h3>
+            <p>Use grammar tools for JSON/schema-constrained generation</p>
+        </div>
+        <div class="card">
+            <h3>Production</h3>
+            <p>Check server examples and parallel processing for deployment</p>
+        </div>
+        <div class="card">
+            <h3>Mobile</h3>
+            <p>SwiftUI and Android examples for native app integration</p>
+        </div>
+    </div>
+    <div style="margin-top: 40px; text-align: center; color: #666;">
+        <p>github.com/ggml-org/llama.cpp</p>
+    </div>
+</div>
+
+<script>
+    let currentSlide = 0;
+    const slides = document.querySelectorAll('.slide');
+    
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight' || e.key === ' ') {
+            e.preventDefault();
+            currentSlide = Math.min(currentSlide + 1, slides.length - 1);
+            slides[currentSlide].scrollIntoView({ behavior: 'smooth' });
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            currentSlide = Math.max(currentSlide - 1, 0);
+            slides[currentSlide].scrollIntoView({ behavior: 'smooth' });
+        }
+    });
+    
+    window.addEventListener('scroll', () => {
+        const scrollPos = window.scrollY;
+        slides.forEach((slide, i) => {
+            if (slide.offsetTop <= scrollPos + 100) {
+                currentSlide = i;
+            }
+        });
+    });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GGML Tensor Library 代码切片</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .slide {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            overflow: hidden;
+        }
+        
+        .slide-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+        
+        .slide-header h1 {
+            font-size: 2.2rem;
+            margin-bottom: 10px;
+        }
+        
+        .slide-header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .slide-content {
+            padding: 30px;
+        }
+        
+        .slide-content h2 {
+            color: #5a67d8;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+            margin-bottom: 25px;
+        }
+        
+        .slide-content p {
+            margin-bottom: 20px;
+            font-size: 1.1rem;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+        
+        .feature {
+            background: #f8f9ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 0 5px 5px 0;
+        }
+        
+        .feature h3 {
+            color: #4a5568;
+            margin-bottom: 10px;
+        }
+        
+        .code-example {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            overflow-x: auto;
+            margin: 20px 0;
+            font-size: 0.9rem;
+        }
+        
+        .diagram {
+            text-align: center;
+            margin: 30px 0;
+            padding: 20px;
+            background: #f7fafc;
+            border-radius: 5px;
+        }
+        
+        .nav {
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+        }
+        
+        .nav button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            margin: 0 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.3s;
+        }
+        
+        .nav button:hover {
+            background: #5a67d8;
+        }
+        
+        .highlight {
+            background: #fffbcc;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .slide-header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .slide-content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Slide 1: Overview -->
+        <div class="slide">
+            <div class="slide-header">
+                <h1>GGML Tensor Library</h1>
+                <p>用于机器学习的极简张量库</p>
+            </div>
+            <div class="slide-content">
+                <h2>库概述</h2>
+                <p>GGML (Giant Model Language) 是一个专为机器学习任务设计的轻量级张量库，是 llama.cpp 项目的核心组件。</p>
+                
+                <div class="features">
+                    <div class="feature">
+                        <h3>张量操作</h3>
+                        <p>提供一套完整的张量运算函数，支持各种机器学习算法的实现。</p>
+                    </div>
+                    <div class="feature">
+                        <h3>自动求导</h3>
+                        <p>内置自动微分功能，便于梯度计算和模型训练。</p>
+                    </div>
+                    <div class="feature">
+                        <h3>基本优化算法</h3>
+                        <p>包含常用的优化方法，支持模型参数的更新。</p>
+                    </div>
+                </div>
+                
+                <p>库的目标是为各种机器学习任务提供最小化的方法，包括但不限于：</p>
+                <ul>
+                    <li>线性回归</li>
+                    <li>支持向量机</li>
+                    <li>神经网络</li>
+                </ul>
+                
+                <p><span class="highlight">核心概念：</span> 使用计算图来表示函数定义，其中每个张量操作对应图中的一个节点。</p>
+            </div>
+        </div>
+        
+        <!-- Slide 2: Tensor Structure -->
+        <div class="slide">
+            <div class="slide-header">
+                <h1>张量结构与内存布局</h1>
+                <p>理解 GGML 中数据是如何存储和访问的</p>
+            </div>
+            <div class="slide-content">
+                <h2>ggml_tensor 结构体</h2>
+                <p>张量在内存中通过 <span class="highlight">ggml_tensor</span> 结构体存储，包含关键信息：</p>
+                
+                <div class="code-example">
+struct ggml_tensor {
+    enum ggml_type type;      // 数据类型 (F32, F16, Q4_0, 等)
+    int32_t ne[4];            // 每个维度的元素数量
+    int32_t nb[4];            // 每个维度的字节数 (stride)
+    void* data;               // 指向实际数据的指针
+    struct ggml_tensor* src[2]; // 源张量指针 (用于构建计算图)
+    // ... 其他字段
+};
+                </div>
+                
+                <h3>多维张量存储</h3>
+                <p>库支持多达 4 维的张量，采用 <span class="highlight">行主序</span> 存储方式。通过 <code>ne[]</code> 和 <code>nb[]</code> 数组描述张量的形状和步长。</p>
+                
+                <div class="diagram">
+                    <strong>内存布局示例 (2x3 矩阵):</strong><br>
+                    元素顺序: [0,0] [0,1] [0,2] [1,0] [1,1] [1,2]<br>
+                    步长 nb[0] = sizeof(float), nb[1] = 3 * sizeof(float)
+                </div>
+                
+                <h3>数据访问方式</h3>
+                <p>可以通过直接指针操作访问张量数据：</p>
+                <div class="code-example">
+const int nx = 2;
+const int ny = 3;
+struct ggml_tensor * a = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, nx, ny);
+
+for (int y = 0; y < ny; y++) {
+    for (int x = 0; x < nx; x++) {
+        *(float *) ((char *) a->data + y*a->nb[1] + x*a->nb[0]) = x + y;
+    }
+}
+                </div>
+                
+                <p>或者使用辅助函数：</p>
+                <div class="code-example">
+// 设置一维张量的值
+ggml_set_f32_1d(tensor, index, value);
+
+// 读取一维张量的值
+float value = ggml_get_f32_1d(tensor, index);
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 3: Computation Graph -->
+        <div class="slide">
+            <div class="slide-header">
+                <h1>计算图基础</h1>
+                <p>GGML 如何表示和执行计算</p>
+            </div>
+            <div class="slide-content">
+                <h2>延迟计算原则</h2>
+                <p>在 GGML 中，定义函数和实际计算是分离的：</p>
+                <ul>
+                    <li><strong>第一阶段：</strong> 定义计算图（不执行实际计算）</li>
+                    <li><strong>第二阶段：</strong> 显式请求时才执行计算</li>
+                </ul>
+                
+                <h3>示例: f(x) = a*x² + b</h3>
+                <div class="code-example">
+// 阶段1: 构建计算图
+{
+    struct ggml_init_params params = {
+        .mem_size   = 16*1024*1024,
+        .mem_buffer = NULL,
+    };
+    struct ggml_context * ctx = ggml_init(params);
+
+    struct ggml_tensor * x = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1);
+    ggml_set_param(ctx, x); // 标记 x 为输入变量
+
+    struct ggml_tensor * a  = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1);
+    struct ggml_tensor * b  = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1);
+    struct ggml_tensor * x2 = ggml_mul(ctx, x, x);     // x²
+    struct ggml_tensor * f  = ggml_add(ctx, ggml_mul(ctx, a, x2), b); // a*x² + b
+    // 到目前为止，只有图的定义，没有实际数值计算
+}
+
+// 阶段2: 执行计算
+{
+    struct ggml_cgraph * gf = ggml_new_graph(ctx);
+    ggml_build_forward_expand(gf, f); // 构建前向传播图
+
+    // 设置输入和参数值
+    ggml_set_f32(x, 2.0f);
+    ggml_set_f32(a, 3.0f);
+    ggml_set_f32(b, 4.0f);
+
+    // 执行计算
+    ggml_graph_compute_with_ctx(ctx, &gf, n_threads);
+
+    // 获取结果
+    float result = ggml_get_f32_1d(f, 0); // 应该是 3*4 + 4 = 16
+    printf("f = %f\n", result);
+}
+                </div>
+                
+                <h3>计算图的优势</h3>
+                <p>这种设计带来了几个重要优势：</p>
+                <div class="features">
+                    <div class="feature">
+                        <h3>内存效率</h3>
+                        <p>所有计算使用在 <code>ggml_init()</code> 中分配的单一内存缓冲区，避免运行时内存分配开销。</p>
+                    </div>
+                    <div class="feature">
+                        <h3>可重用性</h3>
+                        <p>函数图只需定义一次，可多次计算前向传播和反向传播（梯度）。</p>
+                    </div>
+                    <div class="feature">
+                        <h3>灵活性</h3>
+                        <p>可以轻松修改输入值并重新计算，而无需重建整个图。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 4: Operations & AD -->
+        <div class="slide">
+            <div class="slide-header">
+                <h1>核心操作与自动求导</h1>
+                <p>GGML 如何实现张量运算和梯度计算</p>
+            </div>
+            <div class="slide-content">
+                <h2>基本运算分类</h2>
+                <p>GGML 的操作主要分为两类：</p>
+                <div class="features">
+                    <div class="feature">
+                        <h3>一元操作 (Unary)</h3>
+                        <p>单输入张量操作，如：<br>
+                        <span class="highlight">ggml_relu</span>, <span class="highlight">ggml_sigmoid</span>, <span class="highlight">ggml_sqrt</span></p>
+                    </div>
+                    <div class="feature">
+                        <h3>二元操作 (Binary)</h3>
+                        <p>双输入张量操作，如：<br>
+                        <span class="highlight">ggml_add</span>, <span class="highlight">ggml_mul</span>, <span class="highlight">ggml_div</span></p>
+                    </div>
+                </div>
+                
+                <h3>复杂操作示例</h3>
+                <p>虽然库最初设计仅支持一元和二元操作，但后来扩展了更复杂的操作：</p>
+                <div class="code-example">
+// 维度置换操作
+struct ggml_tensor * ggml_permute(struct ggml_context * ctx,
+                                struct ggml_tensor * src,
+                                int32_t axis0, int32_t axis1,
+                                int32_t axis2, int32_t axis3);
+
+// 一维卷积（步长1）
+struct ggml_tensor * ggml_conv_1d_1s(struct ggml_context * ctx,
+                                   struct ggml_tensor * weight,
+                                   struct ggml_tensor * src);
+
+// 矩阵乘法
+struct ggml_tensor * ggml_mul_mat(struct ggml_context * ctx,
+                                struct ggml_tensor * weight,
+                                struct ggml_tensor * src);
+                </div>
+                
+                <h2>自动求导机制</h2>
+                <p>每个张量操作都实现了前向和反向计算函数：</p>
+                <div class="features">
+                    <div class="feature">
+                        <h3>前向传播</h3>
+                        <p>计算输出张量值，给定输入张量值：<br>
+                        <span class="highlight">y = f(x₁, x₂, ...)</span></p>
+                    </div>
+                    <div class="feature">
+                        <h3>反向传播 (Backward)</h3>
+                        <p>计算输入张量的导数（伴随），给定输出张量的导数：<br>
+                        <span class="highlight">∂L/∂xᵢ = (∂L/∂y) * (∂y/∂xᵢ)</span></p>
+                    </div>
+                </div>
+                
+                <p><span class="highlight">数学直觉：</span> 反向传播计算的是损失函数 L 对每个输入张量的偏导数，通过链式法则传递梯度。</p>
+                
+                <p>为了帮助理解自动求导，官方推荐这个资源：</p>
+                <div style="text-align: center; margin: 20px 0;">
+                    <a href="https://www.youtube.com/watch?v=wG_nF1awSSY" target="_blank">
+                        "What is Automatic Differentiation?" 视频讲解
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 5: Backend Abstraction -->
+        <div class="slide">
+            <div class="slide-header">
+                <h1>硬件后端抽象</h1>
+                <p>GGML 如何支持多种硬件加速器</p>
+            </div>
+            <div class="slide-content">
+                <h2>统一的后端接口</h2>
+                <p>GGML 通过 <span class="highlight">ggml-backend.h</span> 提供硬件无关的抽象层，使得同一套代码可以在不同硬件平台上运行。</p>
+                
+                <h3>支持的后端</h3>
+                <div class="features">
+                    <div class="feature">
+                        <h3>CUDA</h3>
+                        <p>NVIDIA GPU 加速<br>
+                        文件: <span class="highlight">ggml-cuda/*.cu, ggml-cuda/*.cuh</span></p>
+                    </div>
+                    <div class="feature">
+                        <h3>OpenCL</h3>
+                        <p>跨平台 GPU/加速卡<br>
+                        文件: <span class="highlight">ggml-opencl/*.cl, ggml-opencl/*.cpp</span></p>
+                    </div>
+                    <div class="feature">
+                        <h3>Vulkan</h3>
+                        <p>现代跨平台 GPU API<br>
+                        文件: <span class="highlight">ggml-vulkan/*</span></p>
+                    </div>
+                    <div class="feature">
+                        <h3>Metal</h3>
+                        <p>苹果平台 GPU 加速<br>
+                        文件: <span class="highlight">ggml-metal/*</span></p>
+                    </div>
+                    <div class="feature">
+                        <h3>WebGPU</h3>
+                        <p>网页平台 GPU 加速<br>
+                        文件: <span class="highlight">ggml-webgpu/*</span></p>
+                    </div>
+                    <div class="feature">
+                        <h3>CPU 优化</h3>
+                        <p>包括 SIMD 指令集优化<br>
+                        文件: <span class="highlight">ggml-cpu/*, ggml-sycl/*</span></p>
+                    </div>
+                </div>
+                
+                <h3>后端接口设计</h3>
+                <p>每个后端需要实现一组标准操作：</p>
+                <div class="code-example">
+struct ggml_backend {
+    // 内存管理
+    void (* alloc_buf)(struct ggml_backend * backend, struct ggml_buf * buf);
+    void (* free_buf)(struct ggml_backend * backend, struct ggml_buf * buf);
+    
+    // 异步操作
+    void (* cpymem)(struct ggml_backend * backend, void * dst, const void * src, size_t size);
+    void (* memset )(struct ggml_backend * backend, void * dst, int value, size_t size);
+    
+    // 操作执行
+    void (* op)(struct ggml_backend * backend, const struct ggml_cplan * plan, const struct ggml_tensor * tensors[]);
+    
+    // 同步
+    void (* synchronize)(struct ggml_backend * backend);
+    
+    // 获取后端名称
+    const char * (* get_name)(struct ggml_backend * backend);
+};
+                </div>
+                
+                <h3>后端选择与初始化</h3>
+                <p>在初始化上下文时选择后端：</p>
+                <div class="code-example">
+struct ggml_init_params params = {
+    .mem_size   = buffer_size,
+    .mem_buffer = buffer,
+};
+// 自动选择最佳可用后端
+struct ggml_context * ctx = ggml_init(params);
+
+// 或显式指定后端
+struct ggml_backend * backend = ggml_backend_cpu_init();
+struct ggml_init_params params = {
+    .mem_size   = buffer_size,
+    .mem_buffer = buffer,
+    .backend    = backend,
+};
+struct ggml_context * ctx = ggml_init(params);
+                </div>
+                
+                <p><span class="highlight">优势：</span> 研究人员可以专注于算法实现，而无需为每种硬件平台编写特定代码。</p>
+            </div>
+        </div>
+        
+        <!-- Slide 6: Quantization -->
+        <div class="slide">
+            <div class="slide-header">
+                <h1>量化支持</h1>
+                <p>如何通过降低精度来提高效率</p>
+            </div>
+            <div class="slide-content">
+                <h2>为什么需要量化？</h2>
+                <p>大型语言模型包含 billions 个参数，存储和计算需求巨大。量化技术可以：</p>
+                <ul>
+                    <li>显著减少模型存储大小（通常减少 2-4 倍）</li>
+                    <li>降低内存带宽需求</li>
+                    <li>在一定程度上加速计算</li>
+                    <li>在资源受限设备上运行大模型成为可能</li>
+                </ul>
+                
+                <h3>支持的量化格式</h3>
+                <p>GGML 支持多种量化格式，在 <span class="highlight">ggml-quants.h</span> 和 <span class="highlight">ggml-quants.c</span> 中定义：</p>
+                <div class="code-example">
+enum ggml_type {
+    GGML_TYPE_F32   = 0,  // 32-bit 浮点
+    GGML_TYPE_F16   = 1,  // 16-bit 浮点
+    GGML_TYPE_Q4_0  = 2,  // 4-bit 量化 (无零点)
+    GGML_TYPE_Q4_1  = 3,  // 4-bit 量化 (带零点)
+    GGML_TYPE_Q5_0  = 4,  // 5-bit 量化
+    GGML_TYPE_Q5_1  = 5,  // 5-bit 量化
+    GGML_TYPE_Q8_0  = 6,  // 8-bit 量化
+    GGML_TYPE_Q8_1  = 7,  // 8-bit 量化
+    // ... 更多格式
+};
+                </div>
+                
+                <h3>量化张量的内存布局</h3>
+                <p>量化张量使用特殊的内存布局来存储低精度值：</p>
+                <div class="diagram">
+                    <strong>Q4_0 格式示例:</strong><br>
+                    每个字节存储两个 4-bit 值:<br>
+                    [xxxxxxxx] → [xxxx][xxxx] (两个 4-bit 数字)<br>
+                    需要额外的 scales 和可能的零点来恢复近似值
+                </div>
+                
+                <h3>量化操作实现</h3>
+                <p>量化操作在 <span class="highlight">ggml-quants.c</span> 中实现，包括：</p>
+                <div class="features">
+                    <div class="feature">
+                        <h3>转换函数</h3>
+                        <p>在高精度和低精度之间转换：<br>
+                        <span class="highlight">ggml_quantize_chunk</span>, <span class="highlight">ggml_dequantize_chunk</span></p>
+                    </div>
+                    <div class="feature">
+                        <h3>量化矩阵乘法</h3>
+                        <p>专门优化的量化矩阵运算：<br>
+                        <span class="highlight">ggml_mul_mat_q4_0</span>, <span class="highlight">ggml_mul_mat_q4_1</span> 等</p>
+                    </div>
+                    <div class="feature">
+                        <h3>其他量化操作</h3>
+                        <p>加法、乘法等操作的量化版本</p>
+                    </div>
+                </div>
+                
+                <h3>在 llama.cpp 中的应用</h3>
+                <p>量化是使大型语言模型能够在消费级硬件上运行的关键技术：</p>
+                <div class="code-example>
+// 加载量化模型（例如 4-bit 量化的 LLaMA）
+struct ggml_context * ctx = ggml_init(params);
+struct ggml_tensor * weights = ggml_new_tensor_3d(ctx, GGML_TYPE_Q4_0, ...);
+// 之后的所有矩阵乘法都使用量化版本的操作
+                </div>
+                
+                <p><span class="highlight">权衡：</span> 量化会引入近似误差，需要在模型大小/速度和精度之间找到平衡点。</p>
+            </
