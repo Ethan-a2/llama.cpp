@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>llama.cpp Tests Architecture</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; }
+        .slide { width: 100vw; height: 100vh; display: flex; flex-direction: column; padding: 60px; position: relative; overflow: hidden; }
+        .slide:nth-child(odd) { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); }
+        .slide:nth-child(even) { background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%); }
+        .slide-number { position: absolute; bottom: 20px; right: 30px; font-size: 14px; color: #666; }
+        .slide-title { font-size: 48px; font-weight: 700; margin-bottom: 40px; color: #61dafb; border-bottom: 3px solid #61dafb; padding-bottom: 15px; }
+        .slide-subtitle { font-size: 24px; color: #aaa; margin-bottom: 30px; }
+        .content { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+        ul { list-style: none; padding-left: 0; }
+        li { font-size: 22px; margin: 15px 0; padding-left: 30px; position: relative; line-height: 1.4; }
+        li::before { content: '▸'; position: absolute; left: 0; color: #61dafb; }
+        code { background: #2d2d44; padding: 3px 8px; border-radius: 4px; font-family: 'Fira Code', monospace; color: #f8f8f2; font-size: 0.9em; }
+        pre { background: #0d1117; padding: 20px; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 14px; overflow-x: auto; border-left: 4px solid #61dafb; margin: 10px 0; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .card { background: rgba(255,255,255,0.05); border-radius: 12px; padding: 25px; border: 1px solid rgba(255,255,255,0.1); }
+        .card h3 { color: #61dafb; font-size: 20px; margin-bottom: 15px; }
+        .card p { color: #ccc; font-size: 16px; line-height: 1.5; }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+        .highlight { color: #e06c75; }
+        .keyword { color: #c678dd; }
+        .string { color: #98c379; }
+        .comment { color: #5c6370; font-style: italic; }
+        .function { color: #61dafb; }
+        .type { color: #e5c07b; }
+        .number { color: #d19a66; }
+        .nav { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; }
+        .nav button { background: #61dafb; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; color: #1a1a2e; font-weight: bold; }
+        .mini-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+        .mini-card { background: rgba(97,218,251,0.1); border-radius: 8px; padding: 15px; text-align: center; border: 1px solid rgba(97,218,251,0.3); }
+        .mini-card .count { font-size: 32px; font-weight: bold; color: #61dafb; }
+        .mini-card .label { font-size: 12px; color: #888; margin-top: 5px; }
+        .flow { display: flex; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap; }
+        .flow-item { background: rgba(97,218,251,0.15); padding: 15px 25px; border-radius: 8px; text-align: center; border: 2px solid #61dafb; }
+        .flow-arrow { color: #61dafb; font-size: 24px; }
+        .tag { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; margin: 2px; }
+        .tag-main { background: #61dafb; color: #1a1a2e; }
+        .tag-model { background: #98c379; color: #1a1a2e; }
+        .tag-python { background: #e5c07b; color: #1a1a2e; }
+        .badge { position: absolute; top: 20px; right: 30px; padding: 8px 16px; border-radius: 20px; font-size: 12px; }
+        .badge-red { background: rgba(224,108,117,0.3); color: #e06c75; border: 1px solid #e06c75; }
+        .badge-blue { background: rgba(97,218,251,0.3); color: #61dafb; border: 1px solid #61dafb; }
+        .badge-green { background: rgba(152,195,121,0.3); color: #98c379; border: 1px solid #98c379; }
+        .matrix { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+        .matrix-item { background: rgba(255,255,255,0.03); padding: 12px; border-radius: 6px; display: flex; align-items: center; gap: 10px; }
+        .matrix-icon { width: 8px; height: 8px; border-radius: 50%; background: #61dafb; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        th { color: #61dafb; font-weight: 600; }
+        .emoji-icon { font-size: 28px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="slide">
+        <div class="badge badge-blue">Overview</div>
+        <div class="content" style="justify-content: center; align-items: center; text-align: center;">
+            <div style="font-size: 72px; margin-bottom: 30px;">🧪</div>
+            <h1 style="font-size: 56px; color: #61dafb; margin-bottom: 20px;">llama.cpp Tests</h1>
+            <p style="font-size: 24px; color: #888; max-width: 700px;">Comprehensive test suite for GGML/LLaMA inference library</p>
+            <div style="margin-top: 40px;">
+                <span class="tag tag-main">40+ Test Files</span>
+                <span class="tag tag-model">Model Testing</span>
+                <span class="tag tag-python">Python Scripts</span>
+            </div>
+        </div>
+        <div class="slide-number">1 / 14</div>
+    </div>
+
+    <div class="slide">
+        <div class="badge badge-red">Structure</div>
+        <h2 class="slide-title">Directory Structure</h2>
+        <div class="content">
+            <pre>tests/
+├── <span class="type">CMakeLists.txt</span>          <span class="comment"># Build configuration</span>
+├── <span class="type">testing.h</span>              <span class="comment"># Custom test framework</span>
+├── <span class="type">get-model.cpp/h</span>        <span class="comment"># Model download helper</span>
+├── <span class="type">gguf-model-data.cpp/h</span>  <span class="comment"># GGUF test data</span>
+├── <span class="type">test-*.cpp</span>              <span class="comment"># 40+ test files</span>
+├── <span class="type">test-*.c</span>                <span class="comment"># C API tests</span>
+├── <span class="type">peg-parser/</span>             <span class="comment"># PEG parser tests</span>
+│   ├── test-*.cpp
+│   └── tests.h
+└── <span class="type">test-*.sh</span>              <span class="comment"># Shell scripts</span></pre>
+        </div>
+        <div class="slide-number">2 / 14</div>
+    </div>
+
+    <div class="slide">
+        <div class="badge badge-green">Build</div>
+        <h2 class="slide-title">CMake Build System</h2>
+        <div class="content">
+            <div class="two-col">
+                <div>
+                    <h3 style="color: #61dafb; margin-bottom: 20px;">Custom CMake Functions</h3>
+                    <ul>
+                        <li><code>llama_build(source)</code> - Build test executable</li>
+                        <li><code>llama_test(target)</code> - Register with CTest</li>
+                        <li><code>llama_build_and_test(source)</code> - Build + register with model support</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 style="color: #61dafb; margin-bottom: 20px;">Features</h3>
+                    <ul>
+                        <li>Test labels: <code>main</code>, <code>model</code>, <code>python</code></li>
+                        <li>Working directory specification</li>
+                        <li>Platform conditionals (Windows exclusions)</li>
+                        <li>Fixture support for model downloads</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">3 / 14</div>
+    </div>
+
+    <div class="slide">
+        <div class="badge badge-blue">Framework</div>
+        <h2 class="slide-title">Custom Testing Framework (testing.h)</h2>
+        <div class="content">
+            <div class="two-col">
+                <div>
+                    <h3 style="color: #61dafb; margin-bottom: 15px;">Core API</h3>
+                    <pre><span class="type">struct</span> <span class="function">testing</span> {
+    <span class="type">void</span> <span class="function">test</span>(<span class="type">string</span> name, F f);
+    <span class="type">void</span> <span class="function">bench</span>(<span class="type">string</span> name, F f, <span class="type">int</span> iter);
+    
+    <span class="type">bool</span> <span class="function">assert_true</span>(<span class="type">bool</span> cond);
+    <span class="type">bool</span> <span class="function">assert_equal</span>(A expected, B actual);
+    
+    <span class="type">void</span> <span class="function">set_filter</span>(<span class="type">string</span> regex);
+    <span class="type">int</span>  <span class="function">summary</span>(); <span class="comment">// 0 = success</span>
+};</pre>
+                </div>
+                <div>
+                    <h3 style="color: #61dafb; margin-bottom: 15px;">Usage Pattern</h3>
+                    <pre><span class="type">int</span> <span class="function">main</span>() {
+    <span class="type">testing</span> t;
+    t.<span class="function">test</span>(<span class="string">"name"</span>, [](<span class="type">testing</span> & t) {
+        t.<span class="function">assert_true</span>(cond);
+        t.<span class="function">assert_equal</span>(exp, act);
+    });
+    <span class="keyword">return</span> t.<span class="function">summary</span>();
+}</pre>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">4 / 14</div>
+    </div>
+
+    <div class="slide">
+        <div class="badge badge-green">Categories</div>
+        <h2 class="slide-title">Test Categories Overview</h2>
+        <div class="content">
+            <div class="mini-grid">
+                <div class="mini-card">
+                    <div class="emoji-icon">🔤</div>
+                    <div class="count">6</div>
+                    <div class="label">Tokenizer</div>
+                </div>
+                <div class="mini-card">
+                    <div class="emoji-icon">⚙️</div>
+                    <div class="count">3</div>
+                    <div class="label">Backend/Ops</div>
+                </div>
+                <div class="mini-card">
+                    <div class="emoji-icon">🏗️</div>
+                    <div class="count">2</div>
+                    <div class="label">Architecture</div>
+                </div>
+                <div class="mini-card">
+                    <div class="emoji-icon">💬</div>
+                    <div class="count">4</div>
+                    <div class="label">Chat/Templates</div>
+                </div>
+                <div class="mini-card">
+                    <div class="emoji-icon">📝</div>
+                    <div class="count">5</div>
+                    <div class="label">Grammar</div>
+                </div>
+                <div class="mini-card">
+                    <div class="emoji-icon">🎯</div>
+                    <div class="count">2</div>
+                    <div class="label">Sampling</div>
+                </div>
+                <div class="mini-card">
+                    <div class="emoji-icon">📦</div>
+                    <div class="count">3</div>
+                    <div class="label">GGUF</div>
+                </div>
+                <div class="mini-card">
+                    <div class="emoji-icon">🔄</div>
+                    <div class="count">4</div>
+                    <div class="label">Quantization</div>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">5 / 14</div>
+    </div>
+
+    <div class="slide">
+        <h2 class="slide-title">Tokenizer Tests</h2>
+        <div class="content">
+            <div class="grid">
+                <div class="card">
+                    <h3>🔤 test-tokenizer-0</h3>
+                    <p>Tokenizer validation with vocab files. Loads model, tokenizes text, compares against expected tokens.</p>
+                </div>
+                <div class="card">
+                    <h3>🔤 test-tokenizer-1-spm</h3>
+                    <p>SentencePiece tokenizer implementation tests with reference vocab files.</p>
+                </div>
+                <div class="card">
+                    <h3>🔤 test-tokenizer-1-bpe</h3>
+                    <p>Byte-Pair Encoding tokenizer tests for models using BPE vocabularies.</p>
+                </div>
+                <div class="card">
+                    <h3>📄 test-tokenizer-random.py</h3>
+                    <p>Randomized tokenizer testing with generation and validation scripts.</p>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">6 / 14</div>
+    </div>
+
+    <div class="slide">
+        <h2 class="slide-title">Model & Architecture Tests</h2>
+        <div class="content">
+            <div class="two-col">
+                <div>
+                    <h3 style="color: #61dafb; margin-bottom: 15px;">test-llama-archs.cpp</h3>
+                    <p style="margin-bottom: 15px;">Tests all LLM architectures (~70+ models)</p>
+                    <ul>
+                        <li>LLaMA, GPT-2, GPT-NeoX</li>
+                        <li>Mistral, Mixtral, Qwen</li>
+                        <li>Phi, Gemma, StableLM</li>
+                        <li>Mamba, RWKV, Falcon</li>
+                        <li>And 60+ more...</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 style="color: #61dafb; margin-bottom: 15px;">test-model-*.cpp</h3>
+                    <ul>
+                        <li><code>test-model-load-cancel.cpp</code> - Cancellation during load</li>
+                        <li><code>test-autorelease.cpp</code> - Auto-release pool tests</li>
+                        <li><code>get-model.cpp/h</code> - Model download helper</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">7 / 14</div>
+    </div>
+
+    <div class="slide">
+        <h2 class="slide-title">Backend & Operations Tests</h2>
+        <div class="content">
+            <div class="grid">
+                <div class="card">
+                    <h3>⚙️ test-backend-ops.cpp</h3>
+                    <p>Multi-backend comparison testing. Compares results across CPU, CUDA, Metal, OpenCL, Vulkan backends. Tests GGML operations for numerical accuracy.</p>
+                </div>
+                <div class="card">
+                    <h3>📊 test-backend-sampler.cpp</h3>
+                    <p>Backend-agnostic sampler implementations. Tests sampling methods work correctly across all backends.</p>
+                </div>
+                <div class="card">
+                    <h3>🧮 test-double-float.cpp</h3>
+                    <p>Precision comparison tests between float32 and float16/bfloat16 computations.</p>
+                </div>
+                <div class="card">
+                    <h3>🧵 test-thread-safety.cpp</h3>
+                    <p>Multi-threaded inference correctness verification with concurrent access patterns.</p>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">8 / 14</div>
+    </div>
+
+    <div class="slide">
+        <h2 class="slide-title">Grammar & Constrained Generation</h2>
+        <div class="content">
+            <div class="grid">
+                <div class="card">
+                    <h3>📝 test-grammar-parser.cpp</h3>
+                    <p>GBNF (GGML BNF) grammar parser validation and syntax tree generation.</p>
+                </div>
+                <div class="card">
+                    <h3>📝 test-llama-grammar.cpp</h3>
+                    <p>LLaMA grammar integration - constrains token selection to valid grammar paths.</p>
+                </div>
+                <div class="card">
+                    <h3>📝 test-grammar-integration.cpp</h3>
+                    <p>End-to-end grammar-constrained generation with various grammar rules.</p>
+                </div>
+                <div class="card">
+                    <h3>📝 test-grammar-llguidance.cpp</h3>
+                    <p>LLGuidance integration for advanced constrained generation.</p>
+                </div>
+                <div class="card">
+                    <h3>🔍 test-gbnf-validator.cpp</h3>
+                    <p>GBNF grammar validation and well-formedness checking.</p>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">9 / 14</div>
+    </div>
+
+    <div class="slide">
+        <h2 class="slide-title">Chat Templates & Jinja</h2>
+        <div class="content">
+            <div class="two-col">
+                <div>
+                    <h3 style="color: #61dafb; margin-bottom: 15px;">Chat Template Tests</h3>
+                    <ul>
+                        <li><code>test-chat-template.cpp</code> - Jinja template rendering</li>
+                        <li><code>test-chat.cpp</code> - Chat format handling</li>
+                        <li><code>test-chat-auto-parser.cpp</code> - Auto-detection of chat formats</li>
+                        <li><code>test-chat-peg-parser.cpp</code> - PEG parser for chat</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 style="color: #61dafb; margin-bottom: 15px;">Template Engine</h3>
+                    <ul>
+                        <li><code>test-jinja.cpp</code> - Jinja2 template engine</li>
+                        <li>Supports message roles</li>
+                        <li>System prompt injection</li>
+                        <li>Tool/function calling</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">10 / 14</div>
+    </div>
+
+    <div class="slide">
+        <h2 class="slide-title">Quantization Tests</h2>
+        <div class="content">
+            <div class="grid">
+                <div class="card">
+                    <h3>📊 test-quantize-fns.cpp</h3>
+                    <p>Quantization function correctness. Tests weight conversion from fp16/bf16 to various quantization formats.</p>
+                </div>
+                <div class="card">
+                    <h3>⚡ test-quantize-perf.cpp</h3>
+                    <p>Quantization performance benchmarks. Measures speed and memory improvements across quantization levels.</p>
+                </div>
+                <div class="card">
+                    <h3>📈 test-quantize-stats.cpp</h3>
+                    <p>Quantization statistics. Analyzes quantization error, variance, and quality metrics per layer.</p>
+                </div>
+                <div class="card">
+                    <h3>🔄 test-lora-conversion-inference.sh</h3>
+                    <p>LoRA adapter conversion and inference testing shell script.</p>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">11 / 14</div>
+    </div>
+
+    <div class="slide">
+        <h2 class="slide-title">Testing Patterns</h2>
+        <div class="content">
+            <div class="two-col">
+                <div>
+                    <h3 style="color: #61dafb; margin-bottom: 10px;">Pattern 1: Simple Assertions</h3>
+                    <pre><span class="keyword">#include</span> <span class="string">&lt;cassert&gt;</span>
+<span class="type">int</span> <span class="function">main</span>() {
+    <span class="function">assert</span>(condition);
+    <span class="function">assert</span>(a == b);
+}</pre>
+                </div>
+                <div>
+                    <h3 style="color: #61dafb; margin-bottom: 10px;">Pattern 2: Custom Framework</h3>
+                    <pre>t.<span class="function">test</span>(<span class="string">"case"</span>, [&](<span class="type">auto</span> & t) {
+    t.<span class="function">assert_true</span>(cond);
+    t.<span class="function">assert_equal</span>(e, a);
+});</pre>
+                </div>
+                <div>
+                    <h3 style="color: #61dafb; margin-bottom: 10px;">Pattern 3: Vocab-Based</h3>
+                    <pre>llama_model * m = <span class="function">llama_load_from_file</span>(f);
+<span class="type">auto</span> tokens = <span class="function">tokenize</span>(m, text);
+<span class="function">assert</span>(tokens == expected);</pre>
+                </div>
+                <div>
+                    <h3 style="color: #61dafb; margin-bottom: 10px;">Pattern 4: Multi-Backend</h3>
+                    <pre><span class="type">double</span> err = <span class="function">eval</span>(backend_cpu, backend_cuda);
+<span class="function">assert</span>(err < threshold);</pre>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">12 / 14</div>
+    </div>
+
+    <div class="slide">
+        <h2 class="slide-title">Test Execution Flow</h2>
+        <div class="content" style="justify-content: center;">
+            <div class="flow">
+                <div class="flow-item">
+                    <strong>Build</strong><br>
+                    <small>CMake compiles</small>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-item">
+                    <strong>Register</strong><br>
+                    <small>CTest add_test()</small>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-item">
+                    <strong>Execute</strong><br>
+                    <small>Model/Fixtures</small>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-item">
+                    <strong>Report</strong><br>
+                    <small>Exit code 0/1</small>
+                </div>
+            </div>
+            <div style="margin-top: 50px;">
+                <h3 style="color: #61dafb; margin-bottom: 20px; text-align: center;">Platform Support</h3>
+                <div class="matrix">
+                    <div class="matrix-item"><div class="matrix-icon" style="background: #98c379;"></div> Linux</div>
+                    <div class="matrix-item"><div class="matrix-icon" style="background: #e06c75;"></div> macOS</div>
+                    <div class="matrix-item"><div class="matrix-icon" style="background: #61dafb;"></div> Windows</div>
+                    <div class="matrix-item"><div class="matrix-icon" style="background: #d19a66;"></div> CUDA</div>
+                    <div class="matrix-item"><div class="matrix-icon" style="background: #c678dd;"></div> Metal</div>
+                    <div class="matrix-item"><div class="matrix-icon" style="background: #56b6c2;"></div> Vulkan</div>
+                    <div class="matrix-item"><div class="matrix-icon" style="background: #e5c07b;"></div> OpenCL</div>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">13 / 14</div>
+    </div>
+
+    <div class="slide">
+        <h2 class="slide-title">Key Insights</h2>
+        <div class="content">
+            <ul>
+                <li><strong>Custom lightweight framework</strong> - No external test dependencies, minimal overhead</li>
+                <li><strong>Multi-backend verification</strong> - Ensures consistent results across CPU/CUDA/Metal/etc.</li>
+                <li><strong>Comprehensive architecture coverage</strong> - Tests 70+ LLM architectures in single executable</li>
+                <li><strong>Grammar-based generation</strong> - Validates constrained decoding with GBNF grammars</li>
+                <li><strong>Tokenizer validation</strong> - BPE, SPM, and custom vocabularies</li>
+                <li><strong>Quantization testing</strong> - Function correctness, performance, and quality metrics</li>
+                <li><strong>Fixture-based model loading</strong> - Automatic download and caching for tests</li>
+                <li><strong>Thread safety verification</strong> - Concurrent inference correctness</li>
+            </ul>
+        </div>
+        <div class="slide-number">14 / 14</div>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter') {
+                currentSlide = (currentSlide + 1) % totalSlides;
+                slides[currentSlide].scrollIntoView({ behavior: 'smooth' });
+            } else if (e.key === 'ArrowLeft') {
+                currentSlide = (currentSlide - 1 + totalSlides) % totalSlides;
+                slides[currentSlide].scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+    </script>
+</body>
+</html>
