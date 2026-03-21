@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>gguf-py Architecture</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; }
+        .slide { display: none; min-height: 100vh; padding: 60px 80px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); }
+        .slide.active { display: flex; flex-direction: column; }
+        h1 { font-size: 3em; margin-bottom: 40px; color: #00d9ff; text-shadow: 0 0 20px rgba(0,217,255,0.3); }
+        h2 { font-size: 2.2em; margin-bottom: 30px; color: #ff6b6b; }
+        h3 { font-size: 1.5em; margin-bottom: 20px; color: #ffd93d; }
+        p, li { font-size: 1.3em; line-height: 1.8; color: #ccc; }
+        ul { padding-left: 40px; }
+        .code { background: #0f0f1a; padding: 20px; border-radius: 10px; font-family: 'Monaco', 'Menlo', monospace; font-size: 0.9em; overflow-x: auto; margin: 20px 0; border: 1px solid #333; }
+        .keyword { color: #ff79c6; }
+        .string { color: #f1fa8c; }
+        .comment { color: #6272a4; }
+        .function { color: #50fa7b; }
+        .number { color: #bd93f9; }
+        .class-name { color: #8be9fd; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px; margin-top: 30px; }
+        .card { background: rgba(255,255,255,0.05); border-radius: 15px; padding: 25px; border: 1px solid rgba(255,255,255,0.1); transition: transform 0.3s, box-shadow 0.3s; }
+        .card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,217,255,0.2); }
+        .card h3 { color: #00d9ff; }
+        .nav { position: fixed; bottom: 30px; right: 30px; display: flex; gap: 15px; }
+        .nav button { background: #00d9ff; border: none; padding: 15px 25px; border-radius: 25px; cursor: pointer; font-size: 1em; font-weight: bold; color: #1a1a2e; transition: all 0.3s; }
+        .nav button:hover { background: #ff6b6b; transform: scale(1.1); }
+        .progress { position: fixed; top: 0; left: 0; height: 4px; background: linear-gradient(90deg, #00d9ff, #ff6b6b); transition: width 0.3s; }
+        .slide-num { position: absolute; top: 20px; right: 30px; font-size: 1.2em; color: #666; }
+        .architecture { display: flex; justify-content: center; align-items: center; gap: 40px; flex-wrap: wrap; margin-top: 40px; }
+        .box { background: linear-gradient(145deg, #1e3a5f, #0d1f33); padding: 25px 35px; border-radius: 10px; text-align: center; border: 2px solid #00d9ff; box-shadow: 0 0 20px rgba(0,217,255,0.2); }
+        .box h4 { color: #00d9ff; font-size: 1.3em; margin-bottom: 10px; }
+        .arrow { font-size: 2em; color: #ff6b6b; }
+        .flow { display: flex; flex-direction: column; gap: 20px; }
+        .step { background: rgba(0,217,255,0.1); padding: 20px; border-radius: 10px; border-left: 4px solid #00d9ff; }
+        .step-num { display: inline-block; background: #00d9ff; color: #1a1a2e; width: 30px; height: 30px; border-radius: 50%; text-align: center; line-height: 30px; margin-right: 15px; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #333; }
+        th { background: rgba(0,217,255,0.2); color: #00d9ff; }
+        .highlight { background: rgba(255,107,107,0.2); padding: 3px 8px; border-radius: 4px; }
+        .badge { display: inline-block; background: #ff6b6b; color: #fff; padding: 5px 12px; border-radius: 15px; font-size: 0.8em; margin: 3px; }
+        .badge.blue { background: #00d9ff; color: #1a1a2e; }
+        .badge.yellow { background: #ffd93d; color: #1a1a2e; }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+        .center { text-align: center; justify-content: center; align-items: center; }
+    </style>
+</head>
+<body>
+    <div class="progress" id="progress"></div>
+
+    <!-- Slide 1: Title -->
+    <div class="slide active">
+        <h1>gguf-py</h1>
+        <h2>Python Package for GGUF File Format</h2>
+        <p style="font-size: 1.5em; margin-top: 40px;">GGML Universal File Format - Read & Write ML Models</p>
+        <div style="margin-top: 60px;">
+            <span class="badge">Python 3.8+</span>
+            <span class="badge blue">NumPy</span>
+            <span class="badge yellow">PyYAML</span>
+            <span class="badge">PySide6 (optional)</span>
+        </div>
+        <div class="slide-num">1 / 12</div>
+    </div>
+
+    <!-- Slide 2: Package Overview -->
+    <div class="slide">
+        <h1>Package Structure</h1>
+        <div class="grid">
+            <div class="card">
+                <h3>Core Modules</h3>
+                <ul>
+                    <li><span class="class-name">gguf_reader.py</span> - Read GGUF files</li>
+                    <li><span class="class-name">gguf_writer.py</span> - Write GGUF files</li>
+                    <li><span class="class-name">constants.py</span> - Enums & Keys</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Supporting Modules</h3>
+                <ul>
+                    <li><span class="class-name">vocab.py</span> - Tokenizer handling</li>
+                    <li><span class="class-name">metadata.py</span> - Model metadata</li>
+                    <li><span class="class-name">utility.py</span> - Utilities</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Data Types</h3>
+                <ul>
+                    <li><span class="class-name">quants.py</span> - Quantization</li>
+                    <li><span class="class-name">lazy.py</span> - Lazy loading</li>
+                    <li><span class="class-name">tensor_mapping.py</span> - Tensor mapping</li>
+                </ul>
+            </div>
+        </div>
+        <div class="slide-num">2 / 12</div>
+    </div>
+
+    <!-- Slide 3: GGUF File Format -->
+    <div class="slide">
+        <h1>GGUF File Format Structure</h1>
+        <div class="code">
+<pre>
+┌─────────────────────────────────────────────────────────┐
+│  Header                                                  │
+│  ┌──────────┬──────────┬──────────────┬──────────────┐ │
+│  │  MAGIC   │  VERSION │ TENSOR_COUNT │    KV_COUNT  │ │
+│  │  4 bytes │ 4 bytes  │   8 bytes    │    8 bytes   │ │
+│  └──────────┴──────────┴──────────────┴──────────────┘ │
+├─────────────────────────────────────────────────────────┤
+│  KV Data (Key-Value Metadata)                           │
+│  ┌─────────┬─────────┬─────────┬─────────┐             │
+│  │ Key     │ Type    │ Value   │ ...     │             │
+│  └─────────┴─────────┴─────────┴─────────┘             │
+├─────────────────────────────────────────────────────────┤
+│  Tensor Info                                             │
+│  ┌────────────────────────────────────────────────────┐ │
+│  │ Name | n_dims | dimensions | type | offset | ...   │ │
+│  └────────────────────────────────────────────────────┘ │
+├─────────────────────────────────────────────────────────┤
+│  Tensor Data (aligned to 32 bytes by default)           │
+│  ┌────────────────────────────────────────────────────┐ │
+│  │ [padding] tensor_0 tensor_1 ... tensor_n [padding] │ │
+│  └────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+</pre>
+        </div>
+        <div class="slide-num">3 / 12</div>
+    </div>
+
+    <!-- Slide 4: Constants - GGUFValueType -->
+    <div class="slide">
+        <h1>Constants: Value Types</h1>
+        <div class="code">
+<pre>
+<span class="class-name">class</span> <span class="function">GGUFValueType</span>(<span class="class-name">IntEnum</span>):
+    <span class="comment"># Scalar types</span>
+    <span class="number">UINT8   = 0</span>
+    <span class="number">INT8    = 1</span>
+    <span class="number">UINT16  = 2</span>
+    <span class="number">INT16   = 3</span>
+    <span class="number">UINT32  = 4</span>
+    <span class="number">INT32   = 5</span>
+    <span class="number">FLOAT32 = 6</span>
+    <span class="number">BOOL    = 7</span>
+    <span class="number">STRING  = 8</span>
+    <span class="number">ARRAY   = 9</span>
+    <span class="number">UINT64  = 10</span>
+    <span class="number">INT64   = 11</span>
+    <span class="number">FLOAT64 = 12</span>
+
+<span class="comment"># Constants</span>
+<span class="number">GGUF_MAGIC = 0x46554747</span>  <span class="comment"># "GGUF"</span>
+<span class="number">GGUF_VERSION = 3</span>
+<span class="number">GGUF_DEFAULT_ALIGNMENT = 32</span>
+</pre>
+        </div>
+        <div class="slide-num">4 / 12</div>
+    </div>
+
+    <!-- Slide 5: Constants - Keys -->
+    <div class="slide">
+        <h1>Constants: Metadata Keys</h1>
+        <div class="two-col">
+            <div class="card">
+                <h3>General Keys</h3>
+                <div class="code" style="font-size: 0.75em;">
+<pre>
+<span class="keyword">class</span> <span class="function">General</span>:
+    TYPE                 = <span class="string">"general.type"</span>
+    ARCHITECTURE         = <span class="string">"general.architecture"</span>
+    QUANTIZATION_VERSION = <span class="string">"general.quantization_version"</span>
+    ALIGNMENT            = <span class="string">"general.alignment"</span>
+    FILE_TYPE            = <span class="string">"general.file_type"</span>
+    NAME                 = <span class="string">"general.name"</span>
+    AUTHOR               = <span class="string">"general.author"</span>
+    VOCAB_SIZE           = <span class="string">"llama.vocab_size"</span>
+    <span class="comment"># ... 100+ more keys</span>
+</pre>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Architecture Keys</h3>
+                <div class="code" style="font-size: 0.75em;">
+<pre>
+<span class="keyword">class</span> <span class="function">Attention</span>:
+    HEAD_COUNT   = <span class="string">"{arch}.attention.head_count"</span>
+    HEAD_COUNT_KV= <span class="string">"{arch}.attention.head_count_kv"</span>
+    SCALE        = <span class="string">"{arch}.attention.scale"</span>
+    SLIDING_WINDOW = <span class="string">"{arch}.attention.sliding_window"</span>
+
+<span class="keyword">class</span> <span class="function">Rope</span>:
+    DIMENSION_COUNT = <span class="string">"{arch}.rope.dimension_count"</span>
+    FREQ_BASE       = <span class="string">"{arch}.rope.freq_base"</span>
+    SCALING_TYPE    = <span class="string">"{arch}.rope.scaling.type"</span>
+
+<span class="keyword">class</span> <span class="function">Tokenizer</span>:
+    MODEL   = <span class="string">"tokenizer.ggml.model"</span>
+    LIST    = <span class="string">"tokenizer.ggml.tokens"</span>
+    BOS_ID  = <span class="string">"tokenizer.ggml.bos_token_id"</span>
+    EOS_ID  = <span class="string">"tokenizer.ggml.eos_token_id"</span>
+</pre>
+                </div>
+            </div>
+        </div>
+        <div class="slide-num">5 / 12</div>
+    </div>
+
+    <!-- Slide 6: GGUFReader -->
+    <div class="slide">
+        <h1>GGUFReader: Reading GGUF Files</h1>
+        <div class="code">
+<pre>
+<span class="keyword">class</span> <span class="class-name">GGUFReader</span>:
+    <span class="comment"># Public API</span>
+    <span class="function">__init__</span>(path, mode=<span class="string">'r'</span>)
+    <span class="function">get_field</span>(key: str) → <span class="class-name">ReaderField</span> | <span class="keyword">None</span>
+    <span class="function">get_tensor</span>(idx: int) → <span class="class-name">ReaderTensor</span>
+    
+    <span class="comment"># Properties</span>
+    fields: <span class="class-name">OrderedDict</span>[str, <span class="class-name">ReaderField</span>]
+    tensors: <span class="class-name">list</span>[<span class="class-name">ReaderTensor</span>]
+
+<span class="keyword">class</span> <span class="class-name">ReaderField</span>(<span class="class-name">NamedTuple</span>):
+    offset: int
+    name: str
+    parts: <span class="class-name">list</span>[np.ndarray]  <span class="comment"># Raw data parts</span>
+    data: <span class="class-name">list</span>[int]          <span class="comment"># Indexes to actual data</span>
+    types: <span class="class-name">list</span>[<span class="class-name">GGUFValueType</span>]
+
+<span class="keyword">class</span> <span class="class-name">ReaderTensor</span>(<span class="class-name">NamedTuple</span>):
+    name, tensor_type, shape
+    n_elements, n_bytes
+    data_offset, data: np.ndarray
+    field: <span class="class-name">ReaderField</span>
+</pre>
+        </div>
+        <div class="slide-num">6 / 12</div>
+    </div>
+
+    <!-- Slide 7: GGUFReader Internals -->
+    <div class="slide">
+        <h1>GGUFReader: Internal Flow</h1>
+        <div class="flow">
+            <div class="step">
+                <span class="step-num">1</span>
+                <strong>Memory-map the file</strong> using numpy memmap
+            </div>
+            <div class="step">
+                <span class="step-num">2</span>
+                <strong>Read header</strong> - Magic, Version, Tensor/KV counts
+            </div>
+            <div class="step">
+                <span class="step-num">3</span>
+                <strong>Build KV fields</strong> - Parse key-value metadata
+            </div>
+            <div class="step">
+                <span class="step-num">4</span>
+                <strong>Build tensor info</strong> - Name, dimensions, type, offset
+            </div>
+            <div class="step">
+                <span class="step-num">5</span>
+                <strong>Apply alignment</strong> - Pad to alignment boundary
+            </div>
+            <div class="step">
+                <span class="step-num">6</span>
+                <strong>Build tensors</strong> - Load actual tensor data
+            </div>
+        </div>
+        <div class="code" style="margin-top: 20px;">
+<pre>
+<span class="comment"># Endianness handling</span>
+<span class="keyword">if</span> sys.byteorder == <span class="string">"little"</span>:
+    host_endian = <span class="class-name">GGUFEndian</span>.LITTLE
+<span class="keyword">else</span>:
+    host_endian = <span class="class-name">GGUFEndian</span>.BIG
+<span class="comment"># Auto-detect and swap if needed</span>
+</pre>
+        </div>
+        <div class="slide-num">7 / 12</div>
+    </div>
+
+    <!-- Slide 8: GGUFWriter -->
+    <div class="slide">
+        <h1>GGUFWriter: Writing GGUF Files</h1>
+        <div class="code">
+<pre>
+<span class="keyword">class</span> <span class="class-name">GGUFWriter</span>:
+    <span class="function">__init__</span>(
+        path, arch,
+        use_temp_file=<span class="keyword">False</span>,
+        endianess=<span class="class-name">GGUFEndian</span>.LITTLE,
+        split_max_tensors=<span class="number">0</span>,
+        split_max_size=<span class="number">0</span>
+    )
+    
+    <span class="comment"># Metadata API</span>
+    <span class="function">add_architecture</span>()
+    <span class="function">add_vocab_size</span>(size)
+    <span class="function">add_context_length</span>(length)
+    <span class="function">add_tensor_data_layout</span>(layout)
+    <span class="function">add_string/add_uint32/add_float32</span>(key, val)
+    <span class="function">add_array</span>(key, val)
+    
+    <span class="comment"># Tensor API</span>
+    <span class="function">add_tensor</span>(name, tensor, raw_shape, raw_dtype)
+    <span class="function">write_tensors_to_file</span>(progress=<span class="keyword">False</span>)
+    
+    <span class="comment"># File operations</span>
+    <span class="function">close</span>()
+</pre>
+        </div>
+        <div class="slide-num">8 / 12</div>
+    </div>
+
+    <!-- Slide 9: GGUFWriter State Machine -->
+    <div class="slide">
+        <h1>GGUFWriter: State Machine</h1>
+        <div class="architecture">
+            <div class="box">
+                <h4>NO_FILE</h4>
+                <p>Initial state</p>
+            </div>
+            <span class="arrow">→</span>
+            <div class="box">
+                <h4>EMPTY</h4>
+                <p>File opened</p>
+            </div>
+            <span class="arrow">→</span>
+            <div class="box">
+                <h4>HEADER</h4>
+                <p>Magic + Version</p>
+            </div>
+            <span class="arrow">→</span>
+            <div class="box">
+                <h4>KV_DATA</h4>
+                <p>Metadata written</p>
+            </div>
+            <span class="arrow">→</span>
+            <div class="box">
+                <h4>TI_DATA</h4>
+                <p>Tensor info written</p>
+            </div>
+            <span class="arrow">→</span>
+            <div class="box">
+                <h4>WEIGHTS</h4>
+                <p>Complete</p>
+            </div>
+        </div>
+        <div class="code" style="margin-top: 30px;">
+<pre>
+<span class="keyword">def</span> <span class="function">write_to_file</span>():
+    writer.write_header_to_file()     <span class="comment"># r: EMPTY → HEADER</span>
+    writer.write_kv_data_to_file()   <span class="comment"># r: HEADER → KV_DATA</span>
+    writer.write_ti_data_to_file()    <span class="comment"># r: KV_DATA → TI_DATA</span>
+    writer.write_tensors_to_file()    <span class="comment"># r: TI_DATA → WEIGHTS</span>
+    writer.close()
+</pre>
+        </div>
+        <div class="slide-num">9 / 12</div>
+    </div>
+
+    <!-- Slide 10: Vocab Classes -->
+    <div class="slide">
+        <h1>Vocab: Tokenizer Support</h1>
+        <div class="grid">
+            <div class="card">
+                <h3>SpecialVocab</h3>
+                <p>Loads from tokenizer.json, tokenizer_config.json, config.json</p>
+                <ul>
+                    <li>Special tokens (BOS, EOS, UNK, etc.)</li>
+                    <li>Merges for BPE tokenizers</li>
+                    <li>Chat templates</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Vocab Implementations</h3>
+                <ul>
+                    <li><span class="class-name">BpeVocab</span> - GPT-2 style BPE</li>
+                    <li><span class="class-name">SentencePieceVocab</span> - SPM models</li>
+                    <li><span class="class-name">LlamaHfVocab</span> - HuggingFace tokenizers</li>
+                    <li><span class="class-name">MistralVocab</span> - Mistral tokenizers</li>
+                    <li><span class="class-name">NoVocab</span> - Models without vocab</li>
+                </ul>
+            </div>
+        </div>
+        <div class="code">
+<pre>
+<span class="keyword">class</span> <span class="class-name">Vocab</span>(<span class="class-name">BaseVocab</span>, <span class="class-name">Protocol</span>):
+    vocab_size: int
+    added_tokens_dict: <span class="class-name">dict</span>[str, int]
+    
+    <span class="keyword">def</span> <span class="function">all_tokens</span>(self) → <span class="class-name">Iterable</span>[<span class="class-name">tuple</span>[bytes, float, <span class="class-name">TokenType</span>]]
+</pre>
+        </div>
+        <div class="slide-num">10 / 12</div>
+    </div>
+
+    <!-- Slide 11: Metadata System -->
+    <div class="slide">
+        <h1>Metadata System</h1>
+        <div class="flow">
+            <div class="step">
+                <span class="step-num">1</span>
+                <strong>Load sources</strong> - Model card, HuggingFace params, generation config
+            </div>
+            <div class="step">
+                <span class="step-num">2</span>
+                <strong>Apply heuristics</strong> - Extract model name, author, version
+            </div>
+            <div class="step">
+                <span class="step-num">3</span>
+                <strong>Override values</strong> - Apply metadata_override_path
+            </div>
+            <div class="step">
+                <span class="step-num">4</span>
+                <strong>Write to GGUF</strong> - set_gguf_meta_model(writer)
+            </div>
+        </div>
+        <div class="code" style="margin-top: 20px;">
+<pre>
+<span class="keyword">@dataclass</span>
+<span class="keyword">class</span> <span class="class-name">Metadata</span>:
+    name, author, version, organization
+    finetune, basename, description
+    sampling_sequence, sampling_temp, sampling_top_k, ...
+    base_models: <span class="class-name">list</span>[dict]
+    datasets: <span class="class-name">list</span>[dict]
+    tags, languages: <span class="class-name">list</span>[str]
+</pre>
+        </div>
+        <div class="slide-num">11 / 12</div>
+    </div>
+
+    <!-- Slide 12: Summary -->
+    <div class="slide">
+        <h1>Summary</h1>
+        <div class="grid">
+            <div class="card">
+                <h3>Reading</h3>
+                <p>GGUFReader → fields + tensors</p>
+                <ul>
+                    <li>Memory-mapped for efficiency</li>
+                    <li>Automatic endianness handling</li>
+                    <li>Lazy tensor loading</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Writing</h3>
+                <p>GGUFWriter → binary file</p>
+                <ul>
+                    <li>State machine for file building</li>
+                    <li>Support for model splitting</li>
+                    <li>Progress tracking</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Utilities</h3>
+                <p>Helper functions & classes</p>
+                <ul>
+                    <li>Tokenizers (SPM, BPE, HF)</li>
+                    <li>Metadata extraction</li>
+                    <li>Remote safetensors</li>
+                </ul>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 50px;">
+            <p style="color: #00d9ff; font-size: 1.5em;">Used by convert_hf_to_gguf.py for model conversion</p>
+            <p style="color: #666; margin-top: 20px;">pip install gguf</p>
+        </div>
+        <div class="slide-num">12 / 12</div>
+    </div>
+
+    <div class="nav">
+        <button onclick="prevSlide()">← Prev</button>
+        <button onclick="nextSlide()">Next →</button>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+
+        function showSlide(n) {
+            slides[currentSlide].classList.remove('active');
+            currentSlide = (n + totalSlides) % totalSlides;
+            slides[currentSlide].classList.add('active');
+            document.getElementById('progress').style.width = ((currentSlide + 1) / totalSlides * 100) + '%';
+        }
+
+        function nextSlide() { showSlide(currentSlide + 1); }
+        function prevSlide() { showSlide(currentSlide - 1); }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') nextSlide();
+            if (e.key === 'ArrowLeft') prevSlide();
+        });
+    </script>
+</body>
+</html>
