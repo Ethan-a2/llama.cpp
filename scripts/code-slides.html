@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>llama.cpp Scripts - Code Architecture</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1a1a2e; color: #eee; overflow: hidden; }
+    .slide { display: none; width: 100vw; height: 100vh; padding: 60px 80px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); position: relative; }
+    .slide.active { display: flex; flex-direction: column; }
+    .slide-header { margin-bottom: 40px; }
+    .slide-number { color: #e94560; font-size: 14px; margin-bottom: 10px; }
+    .slide-title { font-size: 48px; font-weight: 700; color: #fff; line-height: 1.2; }
+    .slide-subtitle { font-size: 20px; color: #a0a0a0; margin-top: 10px; }
+    .content { flex: 1; display: flex; gap: 40px; overflow: hidden; }
+    .content-left, .content-right { flex: 1; }
+    .content-full { flex: 1; overflow-y: auto; }
+    .code-block { background: #0f0f23; border-radius: 12px; padding: 20px; font-family: 'Fira Code', 'Consolas', monospace; font-size: 13px; line-height: 1.6; overflow: auto; max-height: 60vh; }
+    .code-block::-webkit-scrollbar { width: 8px; }
+    .code-block::-webkit-scrollbar-track { background: #1a1a2e; }
+    .code-block::-webkit-scrollbar-thumb { background: #e94560; border-radius: 4px; }
+    .keyword { color: #e94560; }
+    .string { color: #0ead69; }
+    .comment { color: #6a6a8a; font-style: italic; }
+    .function { color: #f9a826; }
+    .variable { color: #4fc3f7; }
+    .number { color: #ce9178; }
+    .tag { color: #e94560; }
+    .attr { color: #4fc3f7; }
+    .nav { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 100; }
+    .nav button { background: #e94560; border: none; color: white; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; transition: all 0.3s; }
+    .nav button:hover { background: #ff6b6b; transform: scale(1.05); }
+    .nav button:disabled { background: #333; cursor: not-allowed; transform: none; }
+    .indicator { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); color: #666; font-size: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+    .card { background: rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.1); }
+    .card h3 { color: #e94560; margin-bottom: 10px; font-size: 18px; }
+    .card p { color: #a0a0a0; font-size: 14px; line-height: 1.5; }
+    .card pre { background: #0f0f23; border-radius: 8px; padding: 12px; margin-top: 10px; font-size: 11px; overflow: auto; }
+    .list { list-style: none; }
+    .list li { padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 15px; }
+    .list li:last-child { border-bottom: none; }
+    .icon { width: 40px; height: 40px; background: #e94560; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .icon-python { background: #3776ab; }
+    .icon-shell { background: #4eaa25; }
+    .icon-js { background: #f7df1e; color: #000; }
+    .icon-cmake { background: #064f8c; }
+    .icon-folder { background: #8b5cf6; }
+    .file-info { flex: 1; }
+    .file-info .name { color: #fff; font-weight: 600; font-size: 15px; }
+    .file-info .desc { color: #888; font-size: 12px; margin-top: 4px; }
+    .tag-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; margin-right: 8px; }
+    .tag-download { background: #0ead69; }
+    .tag-bench { background: #f9a826; color: #000; }
+    .tag-sync { background: #4fc3f7; color: #000; }
+    .tag-test { background: #e94560; }
+    .tag-server { background: #8b5cf6; }
+    .tag-platform { background: #ec4899; }
+    .tag-util { background: #64748b; }
+    .diagram { display: flex; align-items: center; justify-content: center; gap: 30px; flex-wrap: wrap; }
+    .box { background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.2); border-radius: 16px; padding: 25px; text-align: center; min-width: 150px; }
+    .box.highlight { border-color: #e94560; background: rgba(233,69,96,0.1); }
+    .box-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+    .box-count { color: #e94560; font-size: 28px; font-weight: 700; }
+    .arrow { font-size: 30px; color: #666; }
+    .flow { display: flex; flex-direction: column; gap: 15px; }
+    .flow-item { display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.03); padding: 15px 20px; border-radius: 10px; }
+    .flow-num { width: 30px; height: 30px; background: #e94560; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+    .flow-content { flex: 1; }
+    .flow-title { font-weight: 600; margin-bottom: 4px; }
+    .flow-desc { color: #888; font-size: 13px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+    .feature-list { display: flex; flex-direction: column; gap: 12px; }
+    .feature { display: flex; align-items: flex-start; gap: 12px; }
+    .feature-icon { color: #0ead69; font-size: 20px; }
+    .feature-text { color: #ccc; font-size: 15px; line-height: 1.5; }
+    .toc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+    .toc-item { background: rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; cursor: pointer; transition: all 0.3s; }
+    .toc-item:hover { background: rgba(233,69,96,0.2); transform: translateY(-2px); }
+    .toc-item h4 { color: #e94560; margin-bottom: 5px; font-size: 14px; }
+    .toc-item p { color: #888; font-size: 11px; }
+  </style>
+</head>
+<body>
+
+<!-- Slide 1: Title -->
+<div class="slide active" id="slide-1">
+  <div class="slide-header">
+    <div class="slide-number">LLAMA.CPP SCRIPTS</div>
+    <div class="slide-title">Scripts 目录架构分析</div>
+    <div class="slide-subtitle">模型下载 · 基准测试 · 同步工具 · 服务器工具</div>
+  </div>
+  <div class="content">
+    <div class="diagram">
+      <div class="box highlight">
+        <div class="box-title">scripts/</div>
+        <div class="box-count">37+</div>
+        <div style="color:#888;margin-top:8px;">Files & Directories</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="box">
+        <div class="box-title">Python</div>
+        <div class="box-count">12</div>
+        <div style="color:#888;margin-top:8px;">.py files</div>
+      </div>
+      <div class="box">
+        <div class="box-title">Shell</div>
+        <div class="box-count">15</div>
+        <div style="color:#888;margin-top:8px;">.sh files</div>
+      </div>
+      <div class="box">
+        <div class="box-title">Other</div>
+        <div class="box-count">10</div>
+        <div style="color:#888;margin-top:8px;">.js/.mk/.cmake</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 2: Table of Contents -->
+<div class="slide" id="slide-2">
+  <div class="slide-header">
+    <div class="slide-number">02</div>
+    <div class="slide-title">目录结构总览</div>
+  </div>
+  <div class="content">
+    <div class="toc-grid">
+      <div class="toc-item" onclick="goTo(3)">
+        <h4>模型下载脚本</h4>
+        <p>hf.sh - HuggingFace 模型下载</p>
+      </div>
+      <div class="toc-item" onclick="goTo(4)">
+        <h4>基准测试脚本</h4>
+        <p>bench-models.sh, tool_bench.py</p>
+      </div>
+      <div class="toc-item" onclick="goTo(5)">
+        <h4>性能对比工具</h4>
+        <p>compare-llama-bench.py</p>
+      </div>
+      <div class="toc-item" onclick="goTo(6)">
+        <h4>同步工具</h4>
+        <p>sync-ggml.sh, sync_vendor.py</p>
+      </div>
+      <div class="toc-item" onclick="goTo(7)">
+        <h4>服务器工具</h4>
+        <p>server-bench.py, serve-static.js</p>
+      </div>
+      <div class="toc-item" onclick="goTo(8)">
+        <h4>平台专用脚本</h4>
+        <p>Apple, Snapdragon, HIP</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 3: Model Download - hf.sh -->
+<div class="slide" id="slide-3">
+  <div class="slide-header">
+    <div class="slide-number">03</div>
+    <div class="slide-title">模型下载脚本 - hf.sh</div>
+    <div class="slide-subtitle">HuggingFace 模型快速下载工具</div>
+  </div>
+  <div class="content">
+    <div class="two-col">
+      <div>
+        <div class="card">
+          <h3>功能特性</h3>
+          <div class="feature-list">
+            <div class="feature"><span class="feature-icon">✓</span><span class="feature-text">支持 URL 或 repo/file 两种方式指定模型</span></div>
+            <div class="feature"><span class="feature-icon">✓</span><span class="feature-text">自动识别 curl 或 wget 下载工具</span></div>
+            <div class="feature"><span class="feature-icon">✓</span><span class="feature-text">自动替换 blob/main → resolve/main</span></div>
+            <div class="feature"><span class="feature-icon">✓</span><span class="feature-text">支持自定义输出目录</span></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:20px;">
+          <h3>使用示例</h3>
+          <pre style="background:#0f0f23;padding:12px;border-radius:8px;font-size:12px;color:#aaa;">
+./scripts/hf.sh --repo TheBloke/Mixtral-8x7B \
+                 --file mixtral-8x7b-v0.1.Q4_K_M.gguf
+
+./llama-cli -m $(./scripts/hf.sh &lt;URL&gt;)</pre>
+        </div>
+      </div>
+      <div class="code-block">
+<pre><span class="comment">#!/usr/bin/env bash</span>
+
+<span class="comment"># 检测可用的下载工具</span>
+<span class="keyword">if</span> has_cmd wget; <span class="keyword">then</span>
+    cmd=<span class="string">"wget -q -c -O %s/%s %s"</span>
+<span class="keyword">elif</span> has_cmd curl; <span class="keyword">then</span>
+    cmd=<span class="string">"curl -C - -f --output-dir %s -o %s -L %s"</span>
+<span class="keyword">else</span>
+    log <span class="string">"[E] curl or wget not found"</span>
+    exit 1
+<span class="keyword">fi</span>
+
+<span class="comment"># 解析参数</span>
+<span class="keyword">while</span> [[ $# -gt 0 ]]; <span class="keyword">do</span>
+    <span class="keyword">case</span> <span class="string">"$1"</span> <span class="keyword">in</span>
+        --repo) repo=<span class="string">"$2"</span>; shift 2 ;;
+        --file) file=<span class="string">"$2"</span>; shift 2 ;;
+        --outdir) outdir=<span class="string">"$2"</span>; shift 2 ;;
+    <span class="keyword">esac</span>
+<span class="keyword">done</span>
+
+<span class="comment"># 替换 blob/main 为 resolve/main</span>
+url=${url/blob\/main/resolve\/main}
+
+<span class="comment"># 执行下载</span>
+cmd=$(printf <span class="string">"$cmd"</span> <span class="string">"$outdir"</span> <span class="string">"$basename"</span> <span class="string">"$url"</span>)
+$cmd</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 4: Benchmark Scripts -->
+<div class="slide" id="slide-4">
+  <div class="slide-header">
+    <div class="slide-number">04</div>
+    <div class="slide-title">基准测试脚本</div>
+    <div class="slide-subtitle">bench-models.sh & tool_bench.py</div>
+  </div>
+  <div class="content">
+    <div class="two-col">
+      <div>
+        <div class="card">
+          <h3>bench-models.sh</h3>
+          <p>批量运行多个模型的基准测试，支持 llama-bench 和 llama-batched-bench</p>
+          <div style="margin-top:15px;">
+            <span class="tag-badge tag-bench">llama-bench</span>
+            <span class="tag-badge tag-bench">llama-batched-bench</span>
+          </div>
+          <pre style="background:#0f0f23;padding:12px;border-radius:8px;margin-top:12px;font-size:11px;color:#aaa;">
+./scripts/bench-models.sh --quick  # 快速测试
+./scripts/bench-models.sh --dio    # 直接IO模式</pre>
+        </div>
+        <div class="card" style="margin-top:15px;">
+          <h3>tool_bench.py</h3>
+          <p>Tool call 基准测试，支持 llama-server 和 Ollama 对比</p>
+          <pre style="background:#0f0f23;padding:12px;border-radius:8px;margin-top:12px;font-size:11px;color:#aaa;">
+./scripts/tool_bench.py run --n 30 \
+  --hf bartowski/Qwen2.5-1.5B-Instruct-GGUF
+./scripts/tool_bench.py plot *.jsonl</pre>
+        </div>
+      </div>
+      <div class="code-block">
+<pre><span class="comment"># bench-models.sh 核心逻辑</span>
+<span class="function">run_model</span>() {
+    local HFR=$1  <span class="comment"># HuggingFace Repo</span>
+    local HFF=$2  <span class="comment"># HuggingFace File</span>
+
+    <span class="comment"># 运行 llama-batched-bench</span>
+    ./bin/llama-batched-bench \
+        -hfr <span class="string">"${HFR}"</span> -hff <span class="string">"${HFF}"</span> \
+        -m <span class="string">"${HFF}"</span> -fa 1 -ub 2048 \
+        ${ARGS_BB}
+
+    <span class="comment"># 运行 llama-bench</span>
+    ./bin/llama-bench \
+        -m <span class="string">"${HFF}"</span> -fa 1 -ub 2048 \
+        ${ARGS_B}
+}
+
+<span class="comment"># 测试多个模型</span>
+run_model <span class="string">"ggml-org/Qwen3-Coder-30B-A3B..."</span>
+run_model <span class="string">"ggml-org/Qwen2.5-Coder-7B..."</span>
+run_model <span class="string">"ggml-org/gemma-3-4b-it-qat..."</span></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 5: Compare Tool -->
+<div class="slide" id="slide-5">
+  <div class="slide-header">
+    <div class="slide-number">05</div>
+    <div class="slide-title">性能对比工具</div>
+    <div class="slide-subtitle">compare-llama-bench.py - 1000+ 行</div>
+  </div>
+  <div class="content">
+    <div class="two-col">
+      <div>
+        <div class="card">
+          <h3>支持的工具</h3>
+          <div class="feature-list">
+            <div class="feature"><span class="feature-icon">◆</span><span class="feature-text"><strong>llama-bench</strong> - 推理性能测试</span></div>
+            <div class="feature"><span class="feature-icon">◆</span><span class="feature-text"><strong>test-backend-ops</strong> - 算子测试</span></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:15px;">
+          <h3>数据格式</h3>
+          <div class="feature-list">
+            <div class="feature"><span class="feature-icon">📄</span><span class="feature-text">SQLite 数据库 (.sqlite)</span></div>
+            <div class="feature"><span class="feature-icon">📄</span><span class="feature-text">JSON / JSONL 文件</span></div>
+            <div class="feature"><span class="feature-icon">📄</span><span class="feature-text">CSV 文件</span></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:15px;">
+          <h3>输出格式</h3>
+          <div class="feature-list">
+            <div class="feature"><span class="feature-icon">📊</span><span class="feature-text">表格 (pipe/latex/mediawiki)</span></div>
+            <div class="feature"><span class="feature-icon">📈</span><span class="feature-text">性能对比图表 (--plot)</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="code-block">
+<pre><span class="comment"># 核心数据结构</span>
+<span class="keyword">class</span> <span class="function">LlamaBenchData</span>:
+    <span class="variable">repo</span>: Optional[git.Repo]
+    <span class="variable">builds</span>: list[str]
+    <span class="variable">tool</span>: str  <span class="comment"># "llama-bench" or "test-backend-ops"</span>
+
+<span class="keyword">class</span> <span class="function">LlamaBenchDataSQLite3</span>(LlamaBenchData):
+    <span class="comment"># 内存 SQLite 数据库</span>
+    connection: sqlite3.Connection
+    table_name: str
+
+<span class="keyword">class</span> <span class="function">LlamaBenchDataJSONL</span>(LlamaBenchDataSQLite3):
+    <span class="comment"># JSONL 文件解析</span>
+
+<span class="keyword">class</span> <span class="function">LlamaBenchDataCSV</span>(LlamaBenchDataSQLite3):
+    <span class="comment"># CSV 文件解析</span>
+
+<span class="comment"># 使用示例</span>
+./scripts/compare-llama-bench.py \
+  -b master -c feature-branch \
+  --plot comparison.png</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 6: Sync Scripts -->
+<div class="slide" id="slide-6">
+  <div class="slide-header">
+    <div class="slide-number">06</div>
+    <div class="slide-title">同步工具</div>
+    <div class="slide-subtitle">sync-ggml.sh & sync_vendor.py</div>
+  </div>
+  <div class="content">
+    <div class="two-col">
+      <div class="code-block">
+<pre><span class="comment">#!/usr/bin/env bash</span>
+<span class="comment"># sync-ggml.sh - 同步 ggml 子模块</span>
+
+<span class="comment"># 同步 CMake 配置</span>
+cp -rpv ../ggml/CMakeLists.txt ./ggml/
+cp -rpv ../ggml/src/CMakeLists.txt ./ggml/src/
+
+<span class="comment"># 同步 cmake 文件</span>
+cp -rpv ../ggml/cmake/* ./ggml/cmake/
+
+<span class="comment"># 同步源文件</span>
+cp -rpv ../ggml/src/ggml* ./ggml/src/
+
+<span class="comment"># 同步头文件</span>
+cp -rpv ../ggml/include/ggml*.h ./ggml/include/
+cp -rpv ../ggml/include/gguf*.h ./ggml/include/
+
+<span class="comment"># 同步测试文件</span>
+cp -rpv ../ggml/tests/test-*.cpp ./tests/
+
+<span class="comment"># 同步许可证和脚本</span>
+cp -rpv ../LICENSE ./
+cp -rpv ../ggml/scripts/gen-authors.sh ./scripts/</pre>
+      </div>
+      <div>
+        <div class="card">
+          <h3>sync-ggml.sh</h3>
+          <p>将 ggml 子模块的文件同步到主仓库，包括：</p>
+          <ul style="color:#aaa;margin-top:10px;margin-left:20px;font-size:13px;">
+            <li>CMakeLists.txt 配置</li>
+            <li>源文件 (.cpp)</li>
+            <li>头文件 (.h)</li>
+            <li>测试文件</li>
+            <li>许可证文件</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:15px;">
+          <h3>sync_vendor.py</h3>
+          <p>更通用的同步工具，支持vendor目录管理</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 7: Server Tools -->
+<div class="slide" id="slide-7">
+  <div class="slide-header">
+    <div class="slide-number">07</div>
+    <div class="slide-title">服务器工具</div>
+    <div class="slide-subtitle">server-bench.py & serve-static.js</div>
+  </div>
+  <div class="content">
+    <div class="two-col">
+      <div>
+        <div class="card">
+          <h3>server-bench.py</h3>
+          <p>llama-server 性能基准测试</p>
+        </div>
+        <div class="card" style="margin-top:15px;">
+          <h3>serve-static.js</h3>
+          <p>简单的静态文件服务器，用于 WebAssembly 测试</p>
+          <pre style="background:#0f0f23;padding:12px;border-radius:8px;margin-top:12px;font-size:11px;color:#aaa;">
+emcmake cmake -B build-wasm \
+  -DGGML_WEBGPU=ON
+node scripts/serve-static.js</pre>
+          <div style="margin-top:10px;">
+            <span class="tag-badge tag-server">HTTP</span>
+            <span class="tag-badge tag-server">CORS Headers</span>
+          </div>
+        </div>
+        <div class="card" style="margin-top:15px;">
+          <h3>其他服务器脚本</h3>
+          <ul style="color:#aaa;margin-top:10px;margin-left:20px;font-size:13px;">
+            <li>server-test-model.py - 模型测试</li>
+            <li>fetch_server_test_models.py - 获取测试模型</li>
+          </ul>
+        </div>
+      </div>
+      <div class="code-block">
+<pre><span class="comment">// serve-static.js - Node.js 静态文件服务器</span>
+<span class="keyword">const</span> http = require(<span class="string">'http'</span>);
+<span class="keyword">const</span> fs = require(<span class="string">'fs'</span>).promises;
+<span class="keyword">const</span> path = require(<span class="string">'path'</span>);
+
+<span class="keyword">const</span> server = http.createServer(<span class="keyword">async</span> (req, res) => {
+  <span class="comment">// 设置 CORS headers</span>
+  res.setHeader(<span class="string">'Cross-Origin-Opener-Policy'</span>,
+                <span class="string">'same-origin'</span>);
+  res.setHeader(<span class="string">'Cross-Origin-Embedder-Policy'</span>,
+                <span class="string">'require-corp'</span>);
+
+  <span class="keyword">const</span> filePath = path.join(STATIC_DIR, req.url);
+  <span class="keyword">const</span> stats = await fs.stat(filePath);
+
+  <span class="keyword">if</span> (stats.isDirectory()) {
+    <span class="comment">// 查找 index.html 或生成目录列表</span>
+  } <span class="keyword">else</span> {
+    <span class="comment">// 返回静态文件</span>
+    <span class="keyword">const</span> data = await fs.readFile(filePath);
+    res.end(data);
+  }
+});</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 8: Platform Scripts -->
+<div class="slide" id="slide-8">
+  <div class="slide-header">
+    <div class="slide-number">08</div>
+    <div class="slide-title">平台专用脚本</div>
+    <div class="slide-subtitle">Apple · Snapdragon · HIP</div>
+  </div>
+  <div class="content">
+    <div class="grid">
+      <div class="card">
+        <h3>🍎 Apple 平台</h3>
+        <span class="tag-badge tag-platform">scripts/apple/</span>
+        <ul style="color:#aaa;margin-top:15px;margin-left:20px;font-size:13px;">
+          <li>validate-ios.sh - iOS 验证</li>
+          <li>validate-tvos.sh - tvOS 验证</li>
+          <li>validate-macos.sh - macOS 验证</li>
+          <li>validate-apps.sh - 应用验证</li>
+          <li>validate-visionos.sh - visionOS</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>📱 Snapdragon 平台</h3>
+        <span class="tag-badge tag-platform">scripts/snapdragon/</span>
+        <ul style="color:#aaa;margin-top:15px;margin-left:20px;font-size:13px;">
+          <li>adb/run-*.sh - ADB 测试脚本</li>
+          <li>windows/*.ps1 - Windows PowerShell</li>
+          <li>qdc/ - Qualcomm 专有测试</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🔥 HIP (AMD ROCm)</h3>
+        <span class="tag-badge tag-platform">scripts/hip/</span>
+        <ul style="color:#aaa;margin-top:15px;margin-left:20px;font-size:13px;">
+          <li>gcn-cdna-vgpr-check.py</li>
+          <li>VGPR 使用检查工具</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🔧 其他工具</h3>
+        <span class="tag-badge tag-util">scripts/</span>
+        <ul style="color:#aaa;margin-top:15px;margin-left:20px;font-size:13px;">
+          <li>get-flags.mk - 编译器标志生成</li>
+          <li>xxd.cmake - CMake 工具</li>
+          <li>jinja/ - Jinja2 模板测试</li>
+          <li>debug-test.sh - 调试工具</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 9: Data Flow -->
+<div class="slide" id="slide-9">
+  <div class="slide-header">
+    <div class="slide-number">09</div>
+    <div class="slide-title">典型工作流程</div>
+  </div>
+  <div class="content">
+    <div class="flow">
+      <div class="flow-item">
+        <div class="flow-num">1</div>
+        <div class="flow-content">
+          <div class="flow-title">下载模型 - hf.sh</div>
+          <div class="flow-desc">./scripts/hf.sh --repo TheBloke/Mixtral-8x7B-GGUF --file mixtral-8x7b-v0.1.Q4_K_M.gguf</div>
+        </div>
+      </div>
+      <div class="flow-item">
+        <div class="flow-num">2</div>
+        <div class="flow-content">
+          <div class="flow-title">构建项目 - CMake</div>
+          <div class="flow-desc">cmake -B build && cmake --build build -j</div>
+        </div>
+      </div>
+      <div class="flow-item">
+        <div class="flow-num">3</div>
+        <div class="flow-content">
+          <div class="flow-title">运行基准测试 - bench-models.sh / llama-bench</div>
+          <div class="flow-desc">./scripts/bench-models.sh --quick</div>
+        </div>
+      </div>
+      <div class="flow-item">
+        <div class="flow-num">4</div>
+        <div class="flow-content">
+          <div class="flow-title">保存结果 - SQLite</div>
+          <div class="flow-desc">./llama-bench -o sql | sqlite3 llama-bench.sqlite</div>
+        </div>
+      </div>
+      <div class="flow-item">
+        <div class="flow-num">5</div>
+        <div class="flow-content">
+          <div class="flow-title">对比性能 - compare-llama-bench.py</div>
+          <div class="flow-desc">./scripts/compare-llama-bench.py -b master -c feature --plot comparison.png</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 10: Summary -->
+<div class="slide" id="slide-10">
+  <div class="slide-header">
+    <div class="slide-number">10</div>
+    <div class="slide-title">总结</div>
+  </div>
+  <div class="content">
+    <div class="diagram">
+      <div class="box">
+        <div class="box-title">📥 下载</div>
+        <div style="color:#888;margin-top:8px;font-size:13px;">hf.sh</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="box">
+        <div class="box-title">🔧 构建</div>
+        <div style="color:#888;margin-top:8px;font-size:13px;">CMake</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="box">
+        <div class="box-title">⚡ 测试</div>
+        <div style="color:#888;margin-top:8px;font-size:13px;">bench-*</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="box">
+        <div class="box-title">📊 对比</div>
+        <div style="color:#888;margin-top:8px;font-size:13px;">compare-*</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="box">
+        <div class="box-title">🚀 部署</div>
+        <div style="color:#888;margin-top:8px;font-size:13px;">server</div>
+      </div>
+    </div>
+    <div style="margin-top:60px;text-align:center;color:#888;font-size:14px;">
+      <p>scripts/ 目录提供了完整的模型下载、测试、对比和部署工具链</p>
+      <p style="margin-top:10px;">支持多平台: Linux · macOS · Windows · Android (ADB) · WebAssembly</p>
+    </div>
+  </div>
+</div>
+
+<div class="indicator">
+  <span id="current">1</span> / <span id="total">10</span>
+</div>
+
+<div class="nav">
+  <button id="prevBtn" onclick="prevSlide()">← Prev</button>
+  <button id="nextBtn" onclick="nextSlide()">Next →</button>
+</div>
+
+<script>
+  let currentSlide = 1;
+  const totalSlides = 10;
+
+  function showSlide(n) {
+    if (n < 1) n = 1;
+    if (n > totalSlides) n = totalSlides;
+    
+    document.querySelectorAll('.slide').forEach(s => s.classList.remove('active'));
+    document.getElementById('slide-' + n).classList.add('active');
+    
+    document.getElementById('current').textContent = n;
+    document.getElementById('prevBtn').disabled = n === 1;
+    document.getElementById('nextBtn').disabled = n === totalSlides;
+    
+    currentSlide = n;
+  }
+
+  function nextSlide() { showSlide(currentSlide + 1); }
+  function prevSlide() { showSlide(currentSlide - 1); }
+  function goTo(n) { showSlide(n); }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); prevSlide(); }
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.nav') && !e.target.closest('.toc-item')) {
+      const rect = { left: window.innerWidth / 3, right: 2 * window.innerWidth / 3 };
+      if (e.clientX > rect.right) nextSlide();
+      if (e.clientX < rect.left) prevSlide();
+    }
+  });
+</script>
+
+</body>
+</html>
