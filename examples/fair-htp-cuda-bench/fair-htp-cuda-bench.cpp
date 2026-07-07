@@ -64,10 +64,11 @@ struct context_handle {
 
 static void usage(const char * prog) {
     std::fprintf(stderr,
-        "usage: %s [--backend cpu|cuda|htp|hexagon] [--case mm_decode_f16] [options]\n"
+        "usage: %s [--backend cpu|cuda|htp|hexagon] [--case CASE] [options]\n"
+        "cases: mm_decode_f16, elementwise_fusion_f32, copy_f16_to_f32, kv_set_rows_f16\n"
         "options:\n"
-        "  --in N                 input features (default 1024)\n"
-        "  --out N                output features (default 1024)\n"
+        "  --in N                 input features, width, or vector side (default 1024)\n"
+        "  --out N                output features, rows, or vector side (default 1024)\n"
         "  --warmup N             warmup iterations (default 10)\n"
         "  --iterations N         measured iterations (default 100)\n"
         "  --seed N               deterministic input seed (default 20260707)\n"
@@ -290,31 +291,60 @@ struct graph_case {
     context_handle ctx;
     ggml_tensor * weights = nullptr;
     ggml_tensor * input = nullptr;
+    ggml_tensor * a = nullptr;
+    ggml_tensor * b = nullptr;
+    ggml_tensor * c = nullptr;
+    ggml_tensor * dst = nullptr;
+    ggml_tensor * cache = nullptr;
+    ggml_tensor * update = nullptr;
+    ggml_tensor * indices = nullptr;
     ggml_tensor * output = nullptr;
     ggml_cgraph * graph = nullptr;
     buffer_handle buffer;
 };
 
-static graph_case build_mm_case(ggml_backend_t backend, const bench_params & params) {
+struct tensor_upload {
+    ggml_tensor * tensor = nullptr;
+    const void * data = nullptr;
+    size_t size = 0;
+};
+
+struct prepared_case {
+    graph_case gc;
+    std::vector<ggml_fp16_t> weights_f16;
+    std::vector<ggml_fp16_t> input_f16;
+    std::vector<ggml_fp16_t> cache_f16;
+    std::vector<float> a_f32;
+    std::vector<float> b_f32;
+    std::vector<float> c_f32;
+    std::vector<float> update_f32;
+    std::vector<int32_t> indices_i32;
+    std::vector<float> ref;
+    std::vector<tensor_upload> static_uploads;
+    std::vector<tensor_upload> dynamic_uploads;
+    std::string shape_json;
+    std::string precision;
+};
+
+static size_t checked_product(int a, int b) {
+    const size_t aa = (size_t) a;
+    const size_t bb = (size_t) b;
+    if (aa != 0 && bb > SIZE_MAX / aa) {
+        throw std::runtime_error("shape is too large");
+    }
+    return aa * bb;
+}
+
+static void init_context(graph_case & gc) {
     const size_t ctx_size = 64ull * 1024ull * 1024ull;
     ggml_init_params init = { ctx_size, nullptr, true };
-    graph_case gc;
     gc.ctx.ptr = ggml_init(init);
     if (!gc.ctx.ptr) {
         throw std::runtime_error("ggml_init failed");
     }
+}
 
-    gc.weights = ggml_new_tensor_2d(gc.ctx.ptr, GGML_TYPE_F16, params.in_features, params.out_features);
-    gc.input   = ggml_new_tensor_2d(gc.ctx.ptr, GGML_TYPE_F16, params.in_features, 1);
-    ggml_set_name(gc.weights, "weights_f16");
-    ggml_set_name(gc.input, "input_f16");
-
-    gc.output = ggml_mul_mat(gc.ctx.ptr, gc.weights, gc.input);
-    ggml_set_name(gc.output, "output_f32");
-    if (gc.output->type != GGML_TYPE_F32) {
-        throw std::runtime_error("mm_decode_f16 output is not F32");
-    }
-
+static void finish_graph(ggml_backend_t backend, graph_case & gc) {
     gc.graph = ggml_new_graph(gc.ctx.ptr);
     ggml_build_forward_expand(gc.graph, gc.output);
 
@@ -322,38 +352,223 @@ static graph_case build_mm_case(ggml_backend_t backend, const bench_params & par
     if (!gc.buffer.ptr) {
         throw std::runtime_error("ggml_backend_alloc_ctx_tensors failed");
     }
-    return gc;
 }
 
-static void fill_inputs(const bench_params & params, std::vector<ggml_fp16_t> & weights, std::vector<ggml_fp16_t> & input) {
-    weights.resize((size_t) params.in_features * params.out_features);
-    input.resize((size_t) params.in_features);
+static void add_upload(std::vector<tensor_upload> & uploads, ggml_tensor * tensor, const void * data, size_t size) {
+    uploads.push_back({tensor, data, size});
+}
+
+static void upload_all(const std::vector<tensor_upload> & uploads) {
+    for (const tensor_upload & upload : uploads) {
+        ggml_backend_tensor_set(upload.tensor, upload.data, 0, upload.size);
+    }
+}
+
+static uint64_t hash_uploads(const std::vector<tensor_upload> & uploads, uint64_t hash = 1469598103934665603ull) {
+    for (const tensor_upload & upload : uploads) {
+        hash = fnv1a64(upload.data, upload.size, hash);
+    }
+    return hash;
+}
+
+static void read_tensor_as_f32(ggml_tensor * tensor, std::vector<float> & output) {
+    const int64_t n = ggml_nelements(tensor);
+    if (n < 0) {
+        throw std::runtime_error("negative output element count");
+    }
+    output.resize((size_t) n);
+    if (tensor->type == GGML_TYPE_F32) {
+        ggml_backend_tensor_get(tensor, output.data(), 0, output.size() * sizeof(float));
+        return;
+    }
+    if (tensor->type == GGML_TYPE_F16) {
+        std::vector<ggml_fp16_t> tmp(output.size());
+        ggml_backend_tensor_get(tensor, tmp.data(), 0, tmp.size() * sizeof(ggml_fp16_t));
+        ggml_fp16_to_fp32_row(tmp.data(), output.data(), (int64_t) output.size());
+        return;
+    }
+    throw std::runtime_error("unsupported output tensor type");
+}
+
+static void build_mm_case(ggml_backend_t backend, const bench_params & params, prepared_case & pc) {
+    init_context(pc.gc);
+
+    pc.gc.weights = ggml_new_tensor_2d(pc.gc.ctx.ptr, GGML_TYPE_F16, params.in_features, params.out_features);
+    pc.gc.input   = ggml_new_tensor_2d(pc.gc.ctx.ptr, GGML_TYPE_F16, params.in_features, 1);
+    ggml_set_name(pc.gc.weights, "weights_f16");
+    ggml_set_name(pc.gc.input, "input_f16");
+
+    pc.gc.output = ggml_mul_mat(pc.gc.ctx.ptr, pc.gc.weights, pc.gc.input);
+    ggml_set_name(pc.gc.output, "output_f32");
+    if (pc.gc.output->type != GGML_TYPE_F32) {
+        throw std::runtime_error("mm_decode_f16 output is not F32");
+    }
+
+    pc.weights_f16.resize((size_t) params.in_features * params.out_features);
+    pc.input_f16.resize((size_t) params.in_features);
     uint64_t rng = params.seed;
     std::vector<float> row(params.in_features);
     for (int o = 0; o < params.out_features; ++o) {
         for (int i = 0; i < params.in_features; ++i) {
             row[i] = next_uniform(rng);
         }
-        ggml_fp32_to_fp16_row(row.data(), weights.data() + (size_t) o * params.in_features, params.in_features);
+        ggml_fp32_to_fp16_row(row.data(), pc.weights_f16.data() + (size_t) o * params.in_features, params.in_features);
     }
     for (int i = 0; i < params.in_features; ++i) {
         row[i] = next_uniform(rng);
     }
-    ggml_fp32_to_fp16_row(row.data(), input.data(), params.in_features);
-}
+    ggml_fp32_to_fp16_row(row.data(), pc.input_f16.data(), params.in_features);
 
-static std::vector<float> reference_mm(const bench_params & params, const std::vector<ggml_fp16_t> & weights, const std::vector<ggml_fp16_t> & input) {
-    std::vector<float> output(params.out_features, 0.0f);
+    pc.ref.assign(params.out_features, 0.0f);
     std::vector<float> input_f32(params.in_features);
-    ggml_fp16_to_fp32_row(input.data(), input_f32.data(), params.in_features);
+    ggml_fp16_to_fp32_row(pc.input_f16.data(), input_f32.data(), params.in_features);
     for (int o = 0; o < params.out_features; ++o) {
         float sum = 0.0f;
         for (int i = 0; i < params.in_features; ++i) {
-            sum += ggml_fp16_to_fp32(weights[(size_t) o * params.in_features + i]) * input_f32[i];
+            sum += ggml_fp16_to_fp32(pc.weights_f16[(size_t) o * params.in_features + i]) * input_f32[i];
         }
-        output[o] = sum;
+        pc.ref[o] = sum;
     }
-    return output;
+
+    pc.shape_json = "{\"batch\": 1, \"seq\": 1, \"in_features\": " + std::to_string(params.in_features) +
+        ", \"out_features\": " + std::to_string(params.out_features) + "}";
+    pc.precision = "f16_weight_f16_activation_f32_output";
+    finish_graph(backend, pc.gc);
+    add_upload(pc.static_uploads, pc.gc.weights, pc.weights_f16.data(), pc.weights_f16.size() * sizeof(ggml_fp16_t));
+    add_upload(pc.dynamic_uploads, pc.gc.input, pc.input_f16.data(), pc.input_f16.size() * sizeof(ggml_fp16_t));
+}
+
+static void fill_f32(std::vector<float> & data, uint64_t & rng) {
+    for (float & value : data) {
+        value = next_uniform(rng);
+    }
+}
+
+static void build_elementwise_fusion_case(ggml_backend_t backend, const bench_params & params, prepared_case & pc) {
+    init_context(pc.gc);
+    const size_t n = checked_product(params.in_features, params.out_features);
+
+    pc.gc.a = ggml_new_tensor_1d(pc.gc.ctx.ptr, GGML_TYPE_F32, (int64_t) n);
+    pc.gc.b = ggml_new_tensor_1d(pc.gc.ctx.ptr, GGML_TYPE_F32, (int64_t) n);
+    pc.gc.c = ggml_new_tensor_1d(pc.gc.ctx.ptr, GGML_TYPE_F32, (int64_t) n);
+    ggml_set_name(pc.gc.a, "a_f32");
+    ggml_set_name(pc.gc.b, "b_f32");
+    ggml_set_name(pc.gc.c, "c_f32");
+    pc.gc.output = ggml_add(pc.gc.ctx.ptr, ggml_mul(pc.gc.ctx.ptr, pc.gc.a, pc.gc.b), pc.gc.c);
+    ggml_set_name(pc.gc.output, "fused_output_f32");
+
+    pc.a_f32.resize(n);
+    pc.b_f32.resize(n);
+    pc.c_f32.resize(n);
+    pc.ref.resize(n);
+    uint64_t rng = params.seed;
+    fill_f32(pc.a_f32, rng);
+    fill_f32(pc.b_f32, rng);
+    fill_f32(pc.c_f32, rng);
+    for (size_t i = 0; i < n; ++i) {
+        pc.ref[i] = pc.a_f32[i] * pc.b_f32[i] + pc.c_f32[i];
+    }
+
+    pc.shape_json = "{\"elements\": " + std::to_string(n) +
+        ", \"logical_shape\": [" + std::to_string(params.in_features) + ", " + std::to_string(params.out_features) + "]}";
+    pc.precision = "f32_inputs_f32_output";
+    finish_graph(backend, pc.gc);
+    add_upload(pc.dynamic_uploads, pc.gc.a, pc.a_f32.data(), pc.a_f32.size() * sizeof(float));
+    add_upload(pc.dynamic_uploads, pc.gc.b, pc.b_f32.data(), pc.b_f32.size() * sizeof(float));
+    add_upload(pc.dynamic_uploads, pc.gc.c, pc.c_f32.data(), pc.c_f32.size() * sizeof(float));
+}
+
+static void build_copy_case(ggml_backend_t backend, const bench_params & params, prepared_case & pc) {
+    init_context(pc.gc);
+    const size_t n = checked_product(params.in_features, params.out_features);
+
+    pc.gc.input = ggml_new_tensor_1d(pc.gc.ctx.ptr, GGML_TYPE_F16, (int64_t) n);
+    pc.gc.dst = ggml_new_tensor_1d(pc.gc.ctx.ptr, GGML_TYPE_F32, (int64_t) n);
+    ggml_set_name(pc.gc.input, "copy_input_f16");
+    ggml_set_name(pc.gc.dst, "copy_dst_f32");
+    pc.gc.output = ggml_cpy(pc.gc.ctx.ptr, pc.gc.input, pc.gc.dst);
+    ggml_set_name(pc.gc.output, "copy_output_f32");
+
+    pc.input_f16.resize(n);
+    pc.ref.resize(n);
+    std::vector<float> tmp(n);
+    uint64_t rng = params.seed;
+    fill_f32(tmp, rng);
+    ggml_fp32_to_fp16_row(tmp.data(), pc.input_f16.data(), (int64_t) n);
+    ggml_fp16_to_fp32_row(pc.input_f16.data(), pc.ref.data(), (int64_t) n);
+
+    pc.shape_json = "{\"elements\": " + std::to_string(n) +
+        ", \"logical_shape\": [" + std::to_string(params.in_features) + ", " + std::to_string(params.out_features) + "]}";
+    pc.precision = "f16_input_f32_output";
+    finish_graph(backend, pc.gc);
+    add_upload(pc.dynamic_uploads, pc.gc.input, pc.input_f16.data(), pc.input_f16.size() * sizeof(ggml_fp16_t));
+}
+
+static void build_kv_set_rows_case(ggml_backend_t backend, const bench_params & params, prepared_case & pc) {
+    init_context(pc.gc);
+    const int width = params.in_features;
+    const int update_rows = params.out_features;
+    const int cache_rows = update_rows * 2 + 7;
+    const size_t cache_elements = checked_product(width, cache_rows);
+    const size_t update_elements = checked_product(width, update_rows);
+
+    pc.gc.cache = ggml_new_tensor_2d(pc.gc.ctx.ptr, GGML_TYPE_F16, width, cache_rows);
+    pc.gc.update = ggml_new_tensor_2d(pc.gc.ctx.ptr, GGML_TYPE_F32, width, update_rows);
+    pc.gc.indices = ggml_new_tensor_1d(pc.gc.ctx.ptr, GGML_TYPE_I32, update_rows);
+    ggml_set_name(pc.gc.cache, "kv_cache_f16");
+    ggml_set_name(pc.gc.update, "kv_update_f32");
+    ggml_set_name(pc.gc.indices, "kv_indices_i32");
+    pc.gc.output = ggml_set_rows(pc.gc.ctx.ptr, pc.gc.cache, pc.gc.update, pc.gc.indices);
+    ggml_set_name(pc.gc.output, "kv_cache_updated_f16");
+
+    pc.cache_f16.resize(cache_elements);
+    pc.update_f32.resize(update_elements);
+    pc.indices_i32.resize(update_rows);
+    pc.ref.resize(cache_elements);
+    std::vector<float> tmp(cache_elements);
+    uint64_t rng = params.seed;
+    fill_f32(tmp, rng);
+    ggml_fp32_to_fp16_row(tmp.data(), pc.cache_f16.data(), (int64_t) cache_elements);
+    ggml_fp16_to_fp32_row(pc.cache_f16.data(), pc.ref.data(), (int64_t) cache_elements);
+    fill_f32(pc.update_f32, rng);
+    for (int row = 0; row < update_rows; ++row) {
+        pc.indices_i32[row] = (row * 2 + 3) % cache_rows;
+        const int dst_row = pc.indices_i32[row];
+        for (int col = 0; col < width; ++col) {
+            const size_t src_index = (size_t) row * width + col;
+            const size_t dst_index = (size_t) dst_row * width + col;
+            pc.ref[dst_index] = ggml_fp16_to_fp32(ggml_fp32_to_fp16(pc.update_f32[src_index]));
+        }
+    }
+
+    pc.shape_json = "{\"width\": " + std::to_string(width) +
+        ", \"update_rows\": " + std::to_string(update_rows) +
+        ", \"cache_rows\": " + std::to_string(cache_rows) + "}";
+    pc.precision = "f16_cache_f32_update_f16_output";
+    finish_graph(backend, pc.gc);
+    add_upload(pc.dynamic_uploads, pc.gc.cache, pc.cache_f16.data(), pc.cache_f16.size() * sizeof(ggml_fp16_t));
+    add_upload(pc.dynamic_uploads, pc.gc.update, pc.update_f32.data(), pc.update_f32.size() * sizeof(float));
+    add_upload(pc.dynamic_uploads, pc.gc.indices, pc.indices_i32.data(), pc.indices_i32.size() * sizeof(int32_t));
+}
+
+static bool build_selected_case(ggml_backend_t backend, const bench_params & params, prepared_case & pc) {
+    if (params.case_name == "mm_decode_f16") {
+        build_mm_case(backend, params, pc);
+        return true;
+    }
+    if (params.case_name == "elementwise_fusion_f32") {
+        build_elementwise_fusion_case(backend, params, pc);
+        return true;
+    }
+    if (params.case_name == "copy_f16_to_f32") {
+        build_copy_case(backend, params, pc);
+        return true;
+    }
+    if (params.case_name == "kv_set_rows_f16") {
+        build_kv_set_rows_case(backend, params, pc);
+        return true;
+    }
+    return false;
 }
 
 struct error_metrics {
@@ -414,7 +629,64 @@ static int compute_nodes(ggml_cgraph * graph) {
     return n_compute;
 }
 
-static std::string run_mm_decode_f16(const bench_params & params, int & exit_code) {
+static std::string success_json(
+        const bench_params & params,
+        ggml_backend_dev_t dev,
+        const prepared_case & pc,
+        const std::vector<double> & times,
+        const std::vector<float> & output,
+        const error_metrics & err,
+        int n_compute) {
+    const double mean = std::accumulate(times.begin(), times.end(), 0.0) / std::max<size_t>(times.size(), 1);
+    const double min_v = *std::min_element(times.begin(), times.end());
+    const double max_v = *std::max_element(times.begin(), times.end());
+    const double median = percentile(times, 0.50);
+    const double p95 = percentile(times, 0.95);
+    const uint64_t input_hash = hash_uploads(pc.dynamic_uploads, hash_uploads(pc.static_uploads));
+    const uint64_t output_hash = fnv1a64(output.data(), output.size() * sizeof(float));
+    const uint64_t ref_hash = fnv1a64(pc.ref.data(), pc.ref.size() * sizeof(float));
+
+    std::ostringstream out;
+    out.setf(std::ios::fixed);
+    out.precision(6);
+    out << "{\n"
+        << "  \"schema_version\": 1,\n"
+        << "  \"case\": \"" << json_escape(params.case_name) << "\",\n"
+        << "  \"backend\": \"" << json_escape(params.backend) << "\",\n"
+        << "  \"backend_device\": \"" << json_escape(ggml_backend_dev_name(dev)) << "\",\n"
+        << "  \"backend_description\": \"" << json_escape(ggml_backend_dev_description(dev)) << "\",\n"
+        << "  \"status\": \"" << (err.passed ? "ok" : "invalid") << "\",\n"
+        << "  \"shape\": " << pc.shape_json << ",\n"
+        << "  \"precision\": \"" << json_escape(pc.precision) << "\",\n"
+        << "  \"boundary\": \"input_update+graph_compute+synchronize+output_readback\",\n"
+        << "  \"warmup\": " << params.warmup << ",\n"
+        << "  \"iterations\": " << params.iterations << ",\n"
+        << "  \"seed\": " << params.seed << ",\n"
+        << "  \"latency_ms\": {\"mean\": " << mean << ", \"median\": " << median
+        << ", \"p95\": " << p95 << ", \"min\": " << min_v << ", \"max\": " << max_v << ", \"raw\": [";
+    for (size_t i = 0; i < times.size(); ++i) {
+        if (i) {
+            out << ", ";
+        }
+        out << times[i];
+    }
+    out << "]},\n"
+        << "  \"correctness\": {\"input_hash_fnv1a64\": \"" << hex_u64(input_hash)
+        << "\", \"reference_hash_fnv1a64\": \"" << hex_u64(ref_hash)
+        << "\", \"output_hash_fnv1a64\": \"" << hex_u64(output_hash)
+        << "\", \"max_abs_err\": " << err.max_abs << ", \"max_rel_err\": " << err.max_rel
+        << ", \"rmse\": " << err.rmse << ", \"cosine_similarity\": " << err.cosine
+        << ", \"abs_tol\": " << params.abs_tol << ", \"rel_tol\": " << params.rel_tol
+        << ", \"passed\": " << (err.passed ? "true" : "false") << "},\n"
+        << "  \"backend_assignment\": {\"graph_nodes_total\": " << ggml_graph_n_nodes(pc.gc.graph)
+        << ", \"graph_compute_nodes\": " << n_compute
+        << ", \"target_backend_nodes\": " << n_compute
+        << ", \"cpu_fallback_nodes\": 0, \"unsupported_nodes\": [], \"fallback_count\": 0}\n"
+        << "}\n";
+    return out.str();
+}
+
+static std::string run_fair_case(const bench_params & params, int & exit_code) {
     ggml_backend_load_all();
 
     ggml_backend_dev_t dev = find_device(params.backend);
@@ -435,16 +707,15 @@ static std::string run_mm_decode_f16(const bench_params & params, int & exit_cod
         return status_json("skipped", "SKIPPED: backend init returned null", params);
     }
 
-    std::vector<ggml_fp16_t> weights;
-    std::vector<ggml_fp16_t> input;
-    fill_inputs(params, weights, input);
-    const std::vector<float> ref = reference_mm(params, weights, input);
+    prepared_case pc;
+    if (!build_selected_case(backend.ptr, params, pc)) {
+        exit_code = params.fail_on_skipped ? 2 : 0;
+        return status_json("skipped", "SKIPPED: requested case is not implemented", params);
+    }
+    upload_all(pc.static_uploads);
 
-    graph_case gc = build_mm_case(backend.ptr, params);
-    ggml_backend_tensor_set(gc.weights, weights.data(), 0, weights.size() * sizeof(ggml_fp16_t));
-
-    const std::vector<std::string> unsupported = unsupported_compute_nodes(backend.ptr, gc.graph);
-    const int n_compute = compute_nodes(gc.graph);
+    const std::vector<std::string> unsupported = unsupported_compute_nodes(backend.ptr, pc.gc.graph);
+    const int n_compute = compute_nodes(pc.gc.graph);
     if (!unsupported.empty()) {
         exit_code = params.fail_on_fallback ? 2 : 0;
         std::ostringstream reason;
@@ -455,12 +726,14 @@ static std::string run_mm_decode_f16(const bench_params & params, int & exit_cod
         return status_json("invalid", reason.str(), params);
     }
 
-    std::vector<float> output(params.out_features, 0.0f);
+    std::vector<float> output;
     auto run_once = [&]() -> enum ggml_status {
-        ggml_backend_tensor_set(gc.input, input.data(), 0, input.size() * sizeof(ggml_fp16_t));
-        enum ggml_status status = ggml_backend_graph_compute(backend.ptr, gc.graph);
+        upload_all(pc.dynamic_uploads);
+        enum ggml_status status = ggml_backend_graph_compute(backend.ptr, pc.gc.graph);
         ggml_backend_synchronize(backend.ptr);
-        ggml_backend_tensor_get(gc.output, output.data(), 0, output.size() * sizeof(float));
+        if (status == GGML_STATUS_SUCCESS) {
+            read_tensor_as_f32(pc.gc.output, output);
+        }
         return status;
     };
 
@@ -485,58 +758,9 @@ static std::string run_mm_decode_f16(const bench_params & params, int & exit_cod
         times.push_back(std::chrono::duration<double, std::milli>(end - start).count());
     }
 
-    const error_metrics err = compare_output(output, ref, params);
-    const double mean = std::accumulate(times.begin(), times.end(), 0.0) / std::max<size_t>(times.size(), 1);
-    const double min_v = *std::min_element(times.begin(), times.end());
-    const double max_v = *std::max_element(times.begin(), times.end());
-    const double median = percentile(times, 0.50);
-    const double p95 = percentile(times, 0.95);
-    const uint64_t input_hash = fnv1a64(weights.data(), weights.size() * sizeof(ggml_fp16_t),
-        fnv1a64(input.data(), input.size() * sizeof(ggml_fp16_t)));
-    const uint64_t output_hash = fnv1a64(output.data(), output.size() * sizeof(float));
-    const uint64_t ref_hash = fnv1a64(ref.data(), ref.size() * sizeof(float));
-
+    const error_metrics err = compare_output(output, pc.ref, params);
     exit_code = err.passed ? 0 : 2;
-
-    std::ostringstream out;
-    out.setf(std::ios::fixed);
-    out.precision(6);
-    out << "{\n"
-        << "  \"schema_version\": 1,\n"
-        << "  \"case\": \"mm_decode_f16\",\n"
-        << "  \"backend\": \"" << json_escape(params.backend) << "\",\n"
-        << "  \"backend_device\": \"" << json_escape(ggml_backend_dev_name(dev)) << "\",\n"
-        << "  \"backend_description\": \"" << json_escape(ggml_backend_dev_description(dev)) << "\",\n"
-        << "  \"status\": \"" << (err.passed ? "ok" : "invalid") << "\",\n"
-        << "  \"shape\": {\"batch\": 1, \"seq\": 1, \"in_features\": " << params.in_features
-        << ", \"out_features\": " << params.out_features << "},\n"
-        << "  \"precision\": \"f16_weight_f16_activation_f32_output\",\n"
-        << "  \"boundary\": \"input_update+graph_compute+synchronize+output_readback\",\n"
-        << "  \"warmup\": " << params.warmup << ",\n"
-        << "  \"iterations\": " << params.iterations << ",\n"
-        << "  \"seed\": " << params.seed << ",\n"
-        << "  \"latency_ms\": {\"mean\": " << mean << ", \"median\": " << median
-        << ", \"p95\": " << p95 << ", \"min\": " << min_v << ", \"max\": " << max_v << ", \"raw\": [";
-    for (size_t i = 0; i < times.size(); ++i) {
-        if (i) {
-            out << ", ";
-        }
-        out << times[i];
-    }
-    out << "]},\n"
-        << "  \"correctness\": {\"input_hash_fnv1a64\": \"" << hex_u64(input_hash)
-        << "\", \"reference_hash_fnv1a64\": \"" << hex_u64(ref_hash)
-        << "\", \"output_hash_fnv1a64\": \"" << hex_u64(output_hash)
-        << "\", \"max_abs_err\": " << err.max_abs << ", \"max_rel_err\": " << err.max_rel
-        << ", \"rmse\": " << err.rmse << ", \"cosine_similarity\": " << err.cosine
-        << ", \"abs_tol\": " << params.abs_tol << ", \"rel_tol\": " << params.rel_tol
-        << ", \"passed\": " << (err.passed ? "true" : "false") << "},\n"
-        << "  \"backend_assignment\": {\"graph_nodes_total\": " << ggml_graph_n_nodes(gc.graph)
-        << ", \"graph_compute_nodes\": " << n_compute
-        << ", \"target_backend_nodes\": " << n_compute
-        << ", \"cpu_fallback_nodes\": 0, \"unsupported_nodes\": [], \"fallback_count\": 0}\n"
-        << "}\n";
-    return out.str();
+    return success_json(params, dev, pc, times, output, err, n_compute);
 }
 
 int main(int argc, char ** argv) {
@@ -554,16 +778,10 @@ int main(int argc, char ** argv) {
         return 0;
     }
 
-    if (params.case_name != "mm_decode_f16") {
-        const std::string json = status_json("skipped", "SKIPPED: only mm_decode_f16 is implemented in this benchmark binary", params);
-        std::cout << json;
-        return params.fail_on_skipped ? 2 : 0;
-    }
-
     int exit_code = 0;
     std::string json;
     try {
-        json = run_mm_decode_f16(params, exit_code);
+        json = run_fair_case(params, exit_code);
     } catch (const std::exception & exc) {
         json = status_json("invalid", std::string("INVALID: ") + exc.what(), params);
         exit_code = 2;
