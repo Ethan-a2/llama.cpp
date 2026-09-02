@@ -1239,9 +1239,15 @@ static common_chat_params common_chat_params_init_qwen3_coder(const common_chat_
                                    (p.literal("</think>") | p.peek(p.literal("<tool_call>"))));
         }
 
+        auto disabled_reasoning = p.eps();
+        if (supports_reasoning && !extract_reasoning) {
+            disabled_reasoning = p.optional("<think>" + p.space() + "</think>" + p.space());
+        }
+
         // Response format parser
         if (has_response_format) {
-            return generation_prompt + (reasoning << p.content(p.schema(p.json(), "response-format", inputs.json_schema)));
+            return generation_prompt +
+                   (disabled_reasoning << reasoning << p.content(p.schema(p.json(), "response-format", inputs.json_schema)));
         }
 
         // Tool call parser
@@ -1304,11 +1310,11 @@ static common_chat_params common_chat_params_init_qwen3_coder(const common_chat_
             auto tool_calls = p.trigger_rule("tool-call-root", p.repeat(calls, min_calls, 1));
 
             return generation_prompt +
-                   (reasoning << p.content(p.until_one_of(tool_call_starts)) << tool_calls);
+                   (disabled_reasoning << reasoning << p.content(p.until_one_of(tool_call_starts)) << tool_calls);
         }
 
         // Content only parser
-        return generation_prompt + (reasoning << p.content(p.rest()));
+        return generation_prompt + (disabled_reasoning << reasoning << p.content(p.rest()));
     });
 
     data.parser = parser.save();

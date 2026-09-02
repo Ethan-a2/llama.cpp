@@ -2124,6 +2124,19 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
             .expect_content("<think>\nI'm\nthinking\n</think>\n\nHello, world!\nWhat's up?")
             .run();
 
+        tst.test("Hello, world!")
+            .enable_thinking(false)
+            .reasoning_format(COMMON_REASONING_FORMAT_NONE)
+            .expect_content("Hello, world!")
+            .run();
+
+        tst.test(R"({"ok":true})")
+            .enable_thinking(false)
+            .reasoning_format(COMMON_REASONING_FORMAT_NONE)
+            .json_schema(R"({"type":"object"})")
+            .expect_content(R"({"ok":true})")
+            .run();
+
         tst.test(
                "<tool_call>\n"
                "<function=special_function>\n"
