@@ -5549,6 +5549,16 @@ static bool ggml_hexagon_supported_binary(const struct ggml_hexagon_session * se
     const struct ggml_tensor * src1 = op->src[1];
     const struct ggml_tensor * dst  = op;
 
+    // Binary kernels require flat inputs; eligible float weights can use tiled storage.
+    // Support checks run before allocation. This guard also rejects some flat leaf inputs.
+    for (const auto * src : {src0, src1}) {
+        if (src->op == GGML_OP_NONE &&
+            (src->type == GGML_TYPE_F32 || src->type == GGML_TYPE_F16) &&
+            htp_is_tiled_weight_tensor(src)) {
+            return false;
+        }
+    }
+
     if (src0->type == GGML_TYPE_F32) {
         if (src1->type != GGML_TYPE_F32) {
             return false;
